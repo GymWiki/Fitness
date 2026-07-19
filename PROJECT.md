@@ -12,15 +12,14 @@ gaat. Daarom is de bouwvolgorde bewust: eerst de progressie-engines (het
 1. **Projectsetup: Expo + TypeScript + Supabase, auth (e-mail + magic link)** — ✅ gebouwd
 2. **Progressie-engines als pure functies met uitgebreide unit tests** — ✅ gebouwd
 3. **Intake-flow + generator met 2 templates (full body 3×, upper/lower 4×)** — ✅ gebouwd
-4. **Workout-invoerscherm (sportschool-geoptimaliseerd, offline queue)** — ✅ gebouwd in deze sessie
-5. Advies-weergave per oefening met uitleg-regel — nog niet gebouwd
-6. Simpele historie per oefening (lijst + lijngrafiek) — nog niet gebouwd
+4. **Workout-invoerscherm (sportschool-geoptimaliseerd, offline queue)** — ✅ gebouwd
+5. **Advies-weergave per oefening met uitleg-regel** — ✅ gebouwd in deze sessie
+6. **Simpele historie per oefening (lijst + lijngrafiek)** — ✅ gebouwd in deze sessie
 
-Dit document beschrijft de aanpak voor alle 6 stappen zodat de architectuur
-consistent blijft. Stap 1 en 2 kwamen uit een eerdere sessie, stap 3 uit de
-sessie daarna (de vorige poging tot stap 3 liep tegen een fout aan voordat er
-iets gecommit was, en is toen opnieuw opgebouwd). Deze sessie voegde stap 4
-toe.
+Fase 1 is hiermee compleet. Stap 1 en 2 kwamen uit een eerdere sessie, stap 3
+uit de sessie daarna (de vorige poging tot stap 3 liep tegen een fout aan
+voordat er iets gecommit was, en is toen opnieuw opgebouwd), stap 4 uit de
+sessie erna. Deze sessie voegde stap 5 en 6 toe.
 
 ## Architectuurkeuzes gemaakt in deze sessie
 
@@ -88,6 +87,32 @@ toe.
   (`kind !== 'strength'`) tonen nu een placeholder — de generator produceert
   in stap 3/4 nog geen cardio-oefeningen, dus dit pad is nog niet in de
   praktijk bereikbaar; zie open punt hieronder.
+- **`src/lib/history.ts`** (stap 5+6): één gedeelde `fetchExerciseHistory`
+  haalt alle `set_logs` voor een `day_exercise_id` op en groepeert ze per
+  `workout` (twee losse queries — `set_logs` en `workouts` — in plaats van een
+  embedded join, omdat supabase-js zonder gegenereerde `Database`-types de
+  cardinaliteit van een to-one embed niet correct kan typeren; dat patroon
+  matcht ook al hoe `fetchActiveProgram` de workout-telling apart ophaalt).
+  Die ene functie voedt zowel het advies (stap 5) als de historieschermen
+  (stap 6), zodat de definitie van "een sessie" nergens dubbel staat.
+- **Advies in het workout-scherm** (stap 5): zodra een oefening historie
+  heeft, roept `app/workout/[dayId].tsx` `getStrengthAdvice` uit
+  `@fitness/progression-engine` aan met het zwaarste gewicht uit de laatste
+  sessie als uitgangspunt, en toont de kant-en-klare Nederlandse
+  uitleg-string uit de engine plus een kleurgecodeerd Omhoog/Gelijk/Omlaag-
+  label. Zonder historie toont de kaart een neutrale melding in plaats van de
+  wat vreemde "start op 0 kg"-tekst die `getStrengthAdvice` zou geven als je
+  het met een verzonnen gewicht aanroept — er is geen voorgeschreven
+  startgewicht in het datamodel, dus de eerste keer kiest de gebruiker zelf.
+  De gewicht-stepper wordt voorgevuld met het advies zolang er deze sessie
+  nog geen sets voor die oefening gelogd zijn.
+- **`app/history/[dayExerciseId].tsx`** (stap 6): een lijst van sessies
+  (nieuwste eerst, elk met alle gelogde sets) plus een kleine zelfgebouwde
+  lijngrafiek (`react-native-svg`, geen chart-library) van het zwaarste
+  gewicht per sessie. Bereikbaar via een "Historie"-link naast de
+  oefeningnaam in het workout-scherm; de oefeningnaam wordt als route-param
+  meegegeven zodat de historieschermen geen extra query nodig hebben om de
+  titel te tonen.
 
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
@@ -141,8 +166,22 @@ Toegevoegd in stap 4 (`src/lib/offlineQueue.ts`, `app/workout/[dayId].tsx`):
   (begint bij 1, in lokale React state). Geen server-roundtrip nodig om het
   volgende setnummer te bepalen, wat offline-first noodzakelijk is.
 
-Nog open voor stap 5 e.v. (niet blokkerend voor nu, maar wel relevant bij het
-ontwerpen van de advies-weergave en verdere adaptatie):
+Toegevoegd in stap 5+6 (`src/lib/history.ts`, `app/workout/[dayId].tsx`,
+`app/history/[dayExerciseId].tsx`):
+- **"Zwaarste set van de sessie" als grafiekpunt en als advies-basis**: zowel
+  de lijngrafiek als `currentWeightKg` voor `getStrengthAdvice` gebruiken
+  `Math.max(...sets.map(weightKg))` van een sessie. Bij double progression
+  met een vast werkgewicht per sessie maakt dit weinig uit, maar als iemand
+  bewust aflopende sets (top set + back-off sets) gaat loggen, telt straks
+  alleen de topset mee — dat is een bewuste keuze, geen artefact.
+- **Geen server-side aggregatie**: de historie- en advies-queries halen ruwe
+  `set_logs`/`workouts`-rijen op en groeperen client-side. Voor Fase 1
+  (persoonlijk gebruik, beperkt aantal sessies) is dat prima; bij veel
+  historie zou een database-view of RPC dat werk naar de server kunnen
+  verplaatsen.
+
+Nog open voor Fase 2 (Fase 1 is met stap 1 t/m 6 compleet; dit blijft relevant
+zodra therapietrouw, cardio-programmering en verdere adaptatie aan bod komen):
 - **Bodyweight-progressie**: de kracht-progressie-engine werkt op gewicht;
   voor pure bodyweight-oefeningen (waar gewicht vaak 0 kg is) geeft dat geen
   zinvolle progressie. Nog te ontwerpen: repetitie-gebaseerde progressie of
@@ -157,6 +196,10 @@ ontwerpen van de advies-weergave en verdere adaptatie):
   wordt ingebouwd in de weekplanner-output — de generator bouwt nog geen
   cardio-dagen/blokken in programma's; dat volgt zodra de interference-regel
   is uitgewerkt.
+- `program_adjustments` (de tabel voor server-side adaptatiebeslissingen) is
+  in het datamodel aanwezig sinds stap 1, maar er is nog geen scheduled
+  job/edge function die hem vult — de progressie-engine draait nu alleen
+  client-side, per keer dat de gebruiker het workout-scherm opent.
 
 ## Niet gebouwd (bewust, voor latere fases)
 
@@ -177,7 +220,9 @@ app/                        Expo Router routes
     _layout.tsx                Tab navigator
     index.tsx                   "Vandaag": eerstvolgend dagschema + "Start workout"
   workout/
-    [dayId].tsx                 Workout-invoer: stepper-UI per oefening, offline-first
+    [dayId].tsx                 Workout-invoer: advies-kaart, stepper-UI per oefening, offline-first
+  history/
+    [dayExerciseId].tsx         Historie per oefening: lijngrafiek + lijst per sessie
 src/
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
@@ -186,6 +231,7 @@ src/
     programs.ts                saveGeneratedProgram / fetchActiveProgram / fetchProgramDayWithExercises
     offlineQueue.ts             FIFO sync-wachtrij (AsyncStorage) met idempotente upserts
     id.ts                       generateId() — client-side UUID's voor offline-veilige writes
+    history.ts                  fetchExerciseHistory() — gedeeld door advies (stap 5) en historie (stap 6)
   theme/
     colors.ts                  Donker kleurenpalet
 packages/

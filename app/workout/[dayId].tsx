@@ -1,7 +1,9 @@
+import { getStrengthAdvice, type StrengthAdvice, type StrengthExerciseConfig, type StrengthSessionLog } from '@fitness/progression-engine';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@/lib/auth';
+import { fetchExerciseHistory, type HistorySession } from '@/lib/history';
 import { generateId } from '@/lib/id';
 import { enqueue, getPendingCount } from '@/lib/offlineQueue';
 import { fetchProgramDayWithExercises, type ProgramDayForWorkout } from '@/lib/programs';
@@ -16,6 +18,18 @@ interface LoggedSet {
 }
 
 const RIR_OPTIONS = [0, 1, 2, 3, 4];
+
+const ADVICE_LABELS: Record<StrengthAdvice['action'], string> = {
+  increase_weight: 'Omhoog',
+  maintain: 'Gelijk',
+  decrease_weight: 'Omlaag',
+};
+
+const ADVICE_BADGE_COLORS: Record<StrengthAdvice['action'], { backgroundColor: string; textColor: string }> = {
+  increase_weight: { backgroundColor: colors.accent, textColor: colors.background },
+  maintain: { backgroundColor: colors.surface, textColor: colors.textPrimary },
+  decrease_weight: { backgroundColor: colors.danger, textColor: colors.background },
+};
 
 export default function WorkoutScreen() {
   const params = useLocalSearchParams<{ dayId: string }>();
@@ -34,6 +48,9 @@ export default function WorkoutScreen() {
   const [weightKg, setWeightKg] = useState(0);
   const [reps, setReps] = useState(0);
   const [rir, setRir] = useState(1);
+  const [history, setHistory] = useState<HistorySession[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!dayId) {
@@ -75,6 +92,46 @@ export default function WorkoutScreen() {
     // Only re-seed the inputs when the exercise itself changes, not on every set logged.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exercise?.id]);
+
+  useEffect(() => {
+    if (!exercise || exercise.kind !== 'strength') {
+      setHistory([]);
+      return;
+    }
+    setIsHistoryLoading(true);
+    setHistoryError(null);
+    fetchExerciseHistory(exercise.id)
+      .then(setHistory)
+      .catch((err) => setHistoryError(err instanceof Error ? err.message : 'Kon historie niet laden.'))
+      .finally(() => setIsHistoryLoading(false));
+  }, [exercise?.id, exercise?.kind]);
+
+  const advice = useMemo<StrengthAdvice | null>(() => {
+    if (!exercise || exercise.kind !== 'strength' || history.length === 0) return null;
+    const config: StrengthExerciseConfig = {
+      repRangeMin: exercise.repRangeMin ?? 0,
+      repRangeMax: exercise.repRangeMax ?? 0,
+      targetRIR: exercise.targetRIR ?? 1,
+      exerciseType: exercise.exerciseType ?? 'compound',
+      weightIncrementKg: exercise.weightIncrementKg,
+    };
+    const sessionHistory: StrengthSessionLog[] = history.map((session) => ({
+      date: session.performedAt,
+      sets: session.sets.map((set) => ({ weightKg: set.weightKg, reps: set.reps, rir: set.rir })),
+    }));
+    const lastSession = history[history.length - 1]!;
+    const currentWeightKg = Math.max(...lastSession.sets.map((set) => set.weightKg));
+    return getStrengthAdvice(config, currentWeightKg, sessionHistory);
+  }, [exercise, history]);
+
+  useEffect(() => {
+    // Only auto-fill the suggestion when the lifter hasn't logged a set for this exercise yet this session;
+    // once they have, the stepper should keep tracking their own last-logged weight instead.
+    if (advice && exerciseLogged.length === 0) {
+      setWeightKg(advice.weightKg);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [advice]);
 
   async function logSet() {
     if (!exercise) return;
@@ -139,7 +196,21 @@ export default function WorkoutScreen() {
           Oefening {exerciseIndex + 1} van {day.exercises.length}
         </Text>
 
-        <Text style={styles.exerciseName}>{exercise.exerciseName}</Text>
+        <View style={styles.exerciseHeaderRow}>
+          <Text style={styles.exerciseName}>{exercise.exerciseName}</Text>
+          {!isCardio && (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/history/[dayExerciseId]',
+                  params: { dayExerciseId: exercise.id, exerciseName: exercise.exerciseName },
+                })
+              }
+            >
+              <Text style={styles.historyLink}>Historie</Text>
+            </Pressable>
+          )}
+        </View>
         <Text style={styles.target}>
           Doel: {exercise.sets}× {exercise.repRangeMin}-{exercise.repRangeMax} reps, RIR {exercise.targetRIR}
         </Text>
@@ -150,6 +221,8 @@ export default function WorkoutScreen() {
           </Text>
         ) : (
           <>
+            <AdviceCard isLoading={isHistoryLoading} error={historyError} hasHistory={history.length > 0} advice={advice} />
+
             <Stepper label="Gewicht (kg)" value={weightKg} step={exercise.weightIncrementKg} min={0} onChange={setWeightKg} />
             <Stepper label="Herhalingen" value={reps} step={1} min={0} onChange={setReps} />
 
@@ -202,6 +275,61 @@ export default function WorkoutScreen() {
           </Pressable>
         )}
       </View>
+    </View>
+  );
+}
+
+function AdviceCard({
+  isLoading,
+  error,
+  hasHistory,
+  advice,
+}: {
+  isLoading: boolean;
+  error: string | null;
+  hasHistory: boolean;
+  advice: StrengthAdvice | null;
+}) {
+  if (isLoading) {
+    return (
+      <View style={styles.adviceCard}>
+        <ActivityIndicator color={colors.accent} />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.adviceCard}>
+        <Text style={styles.error}>{error}</Text>
+      </View>
+    );
+  }
+
+  if (!hasHistory || !advice) {
+    return (
+      <View style={styles.adviceCard}>
+        <Text style={styles.body}>
+          Nog geen historie voor deze oefening. Kies zelf een startgewicht voor de eerste set.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.adviceCard}>
+      <View style={styles.adviceHeaderRow}>
+        <Text
+          style={[
+            styles.adviceBadge,
+            { backgroundColor: ADVICE_BADGE_COLORS[advice.action].backgroundColor, color: ADVICE_BADGE_COLORS[advice.action].textColor },
+          ]}
+        >
+          {ADVICE_LABELS[advice.action]}
+        </Text>
+        <Text style={styles.adviceWeight}>{advice.weightKg} kg</Text>
+      </View>
+      <Text style={styles.adviceExplanation}>{advice.explanation}</Text>
     </View>
   );
 }
@@ -283,11 +411,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 8,
   },
+  exerciseHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginTop: 4,
+  },
   exerciseName: {
     color: colors.textPrimary,
     fontSize: 26,
     fontWeight: '700',
-    marginTop: 4,
+    flexShrink: 1,
+  },
+  historyLink: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: '600',
+    paddingBottom: 4,
   },
   target: {
     color: colors.textSecondary,
@@ -298,6 +438,40 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 15,
     lineHeight: 21,
+  },
+  adviceCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  adviceHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  adviceBadge: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  adviceWeight: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  adviceExplanation: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
   },
   error: {
     color: colors.danger,

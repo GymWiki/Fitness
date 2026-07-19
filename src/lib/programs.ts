@@ -85,6 +85,7 @@ export interface WorkoutExercise {
   exerciseName: string;
   muscleGroup: string | null;
   kind: 'strength' | 'cardio_duration' | 'cardio_interval';
+  exerciseType: 'compound' | 'isolation' | null;
   sets: number | null;
   repRangeMin: number | null;
   repRangeMax: number | null;
@@ -104,7 +105,7 @@ export async function fetchProgramDayWithExercises(dayId: string): Promise<Progr
   const { data, error } = await supabase
     .from('program_days')
     .select(
-      'id, name, day_exercises (id, exercise_order, exercise_name, muscle_group, kind, sets, rep_range_min, rep_range_max, target_rir, progression_rule)',
+      'id, name, day_exercises (id, exercise_order, exercise_name, muscle_group, kind, exercise_type, sets, rep_range_min, rep_range_max, target_rir, progression_rule)',
     )
     .eq('id', dayId)
     .maybeSingle();
@@ -122,6 +123,7 @@ export async function fetchProgramDayWithExercises(dayId: string): Promise<Progr
         exerciseName: exercise.exercise_name,
         muscleGroup: exercise.muscle_group,
         kind: exercise.kind,
+        exerciseType: exercise.exercise_type,
         sets: exercise.sets,
         repRangeMin: exercise.rep_range_min,
         repRangeMax: exercise.rep_range_max,
