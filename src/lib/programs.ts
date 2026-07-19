@@ -79,6 +79,58 @@ export interface ActiveProgram {
   nextDayOrder: number;
 }
 
+export interface WorkoutExercise {
+  id: string;
+  exerciseOrder: number;
+  exerciseName: string;
+  muscleGroup: string | null;
+  kind: 'strength' | 'cardio_duration' | 'cardio_interval';
+  sets: number | null;
+  repRangeMin: number | null;
+  repRangeMax: number | null;
+  targetRIR: number | null;
+  /** Smallest weight step to prescribe for this exercise, in kg. Falls back to 1.25 for older/incomplete rows. */
+  weightIncrementKg: number;
+}
+
+export interface ProgramDayForWorkout {
+  id: string;
+  name: string;
+  exercises: WorkoutExercise[];
+}
+
+/** A single program day with its exercises, for the workout-entry screen. RLS scopes this to the owning user. */
+export async function fetchProgramDayWithExercises(dayId: string): Promise<ProgramDayForWorkout | null> {
+  const { data, error } = await supabase
+    .from('program_days')
+    .select(
+      'id, name, day_exercises (id, exercise_order, exercise_name, muscle_group, kind, sets, rep_range_min, rep_range_max, target_rir, progression_rule)',
+    )
+    .eq('id', dayId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  return {
+    id: data.id,
+    name: data.name,
+    exercises: [...(data.day_exercises ?? [])]
+      .sort((a, b) => a.exercise_order - b.exercise_order)
+      .map((exercise) => ({
+        id: exercise.id,
+        exerciseOrder: exercise.exercise_order,
+        exerciseName: exercise.exercise_name,
+        muscleGroup: exercise.muscle_group,
+        kind: exercise.kind,
+        sets: exercise.sets,
+        repRangeMin: exercise.rep_range_min,
+        repRangeMax: exercise.rep_range_max,
+        targetRIR: exercise.target_rir,
+        weightIncrementKg: (exercise.progression_rule as { weightIncrementKg?: number } | null)?.weightIncrementKg ?? 1.25,
+      })),
+  };
+}
+
 /** The most recently started active program for a user, with its days and exercises, or null if none exists yet. */
 export async function fetchActiveProgram(userId: string): Promise<ActiveProgram | null> {
   const { data: programRow, error: programError } = await supabase

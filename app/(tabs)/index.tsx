@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@/lib/auth';
 import { fetchActiveProgram, type ActiveProgram } from '@/lib/programs';
@@ -6,6 +7,7 @@ import { colors } from '@/theme/colors';
 
 export default function TodayScreen() {
   const { session, signOut } = useAuth();
+  const router = useRouter();
   const [program, setProgram] = useState<ActiveProgram | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,9 +25,12 @@ export default function TodayScreen() {
     }
   }, [session]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  // Herlaadt bij elke focus, zodat het net-gelogde workout meteen de volgende dag verschuift.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const todayDay = program?.days.find((day) => day.dayOrder === program.nextDayOrder) ?? null;
 
@@ -56,9 +61,9 @@ export default function TodayScreen() {
               </Text>
             </View>
           ))}
-          <Text style={styles.note}>
-            Workout-invoer met gewichten en herhalingen komt in de volgende bouwstap.
-          </Text>
+          <Pressable style={styles.startButton} onPress={() => router.push(`/workout/${todayDay.id}`)}>
+            <Text style={styles.startButtonText}>Start workout</Text>
+          </Pressable>
         </View>
       )}
 
@@ -143,6 +148,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     marginTop: 12,
+  },
+  startButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  startButtonText: {
+    color: colors.background,
+    fontSize: 16,
+    fontWeight: '700',
   },
   signOutButton: {
     marginTop: 24,

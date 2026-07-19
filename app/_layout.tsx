@@ -31,6 +31,7 @@ function RootNavigator() {
       </Stack.Protected>
       <Stack.Protected guard={!!session && !!profile}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="workout/[dayId]" options={{ presentation: 'modal' }} />
       </Stack.Protected>
     </Stack>
   );

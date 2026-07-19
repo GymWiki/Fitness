@@ -11,16 +11,16 @@ gaat. Daarom is de bouwvolgorde bewust: eerst de progressie-engines (het
 
 1. **Projectsetup: Expo + TypeScript + Supabase, auth (e-mail + magic link)** — ✅ gebouwd
 2. **Progressie-engines als pure functies met uitgebreide unit tests** — ✅ gebouwd
-3. **Intake-flow + generator met 2 templates (full body 3×, upper/lower 4×)** — ✅ gebouwd in deze sessie
-4. Workout-invoerscherm (sportschool-geoptimaliseerd, offline queue) — nog niet gebouwd
+3. **Intake-flow + generator met 2 templates (full body 3×, upper/lower 4×)** — ✅ gebouwd
+4. **Workout-invoerscherm (sportschool-geoptimaliseerd, offline queue)** — ✅ gebouwd in deze sessie
 5. Advies-weergave per oefening met uitleg-regel — nog niet gebouwd
 6. Simpele historie per oefening (lijst + lijngrafiek) — nog niet gebouwd
 
 Dit document beschrijft de aanpak voor alle 6 stappen zodat de architectuur
-consistent blijft. Stap 1 en 2 kwamen uit een eerdere sessie; deze sessie
-voegde stap 3 toe (de vorige poging tot stap 3 liep tegen een fout aan
-voordat er iets gecommit was, dus is hier opnieuw en van de grond af
-opgebouwd).
+consistent blijft. Stap 1 en 2 kwamen uit een eerdere sessie, stap 3 uit de
+sessie daarna (de vorige poging tot stap 3 liep tegen een fout aan voordat er
+iets gecommit was, en is toen opnieuw opgebouwd). Deze sessie voegde stap 4
+toe.
 
 ## Architectuurkeuzes gemaakt in deze sessie
 
@@ -64,8 +64,30 @@ opgebouwd).
   waarna de gate vanzelf naar `(tabs)` omslaat — geen handmatige navigatie.
 - **"Vandaag" toont het eerstvolgende dagschema**: `fetchActiveProgram` telt
   hoeveel `workouts` al aan de dagen van het actieve programma hangen en
-  bepaalt daarmee `nextDayOrder = workoutCount % aantalDagen`. Zolang stap 4
-  (workout-invoer) er nog niet is, blijft dat altijd dag 1.
+  bepaalt daarmee `nextDayOrder = workoutCount % aantalDagen`. Met stap 4
+  (workout-invoer) klopt dat nu ook echt, want er ontstaan `workouts`-rijen.
+- **Offline-first workout-invoer** (stap 4, `src/lib/offlineQueue.ts`): elke
+  actie (workout aanmaken, set loggen, cardio loggen) krijgt een
+  client-gegenereerd UUID (`expo-crypto`) en wordt eerst in een FIFO-wachtrij
+  in AsyncStorage gezet, met een `upsert` (niet `insert`) als eventuele
+  Supabase-call. Dat maakt retries idempotent: een halve sync die opnieuw
+  geprobeerd wordt, overschrijft dezelfde rij in plaats van een duplicaat te
+  maken. De wachtrij verwerkt strikt in volgorde en stopt bij de eerste
+  mislukking — dat garandeert dat een `log_set`-actie nooit vóór de
+  `create_workout` waar hij van afhangt wordt geprobeerd (foreign key naar
+  `workouts.id`), zonder dat er expliciete dependency-tracking nodig is.
+  Sync-triggers: direct na elke `enqueue`, bij een `NetInfo`-reconnect-event,
+  en elke 20s zolang de wachtrij niet leeg is (voor het geval een
+  reconnect-event niet feilloos vuurt op flakey sportschool-wifi).
+- **`app/workout/[dayId].tsx`** als modal-scherm binnen dezelfde
+  `Stack.Protected`-groep als `(tabs)`: bereikbaar via "Start workout" op
+  "Vandaag", niet als eigen tab. Per oefening: een gewicht-/reps-stepper met
+  grote knoppen (geen toetsenbord nodig) en een RIR-kiezer 0-4, met "Set
+  loggen" die direct naar de wachtrij schrijft en de invoer voor de volgende
+  set alvast vult met het laatst gelogde gewicht. Cardio-oefeningen
+  (`kind !== 'strength'`) tonen nu een placeholder — de generator produceert
+  in stap 3/4 nog geen cardio-oefeningen, dus dit pad is nog niet in de
+  praktijk bereikbaar; zie open punt hieronder.
 
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
@@ -104,18 +126,37 @@ Toegevoegd in stap 3 (`packages/program-generator/src/repSchemes.ts`,
   heeft een vaste, deterministische oefeningkeuze per equipment. Geen
   randomisatie, zodat de generator voorspelbaar en makkelijk te testen blijft.
 
-Nog open voor stap 4 e.v. (niet blokkerend voor nu, maar wel relevant bij het
-ontwerpen van workout-invoer en verdere adaptatie):
+Toegevoegd in stap 4 (`src/lib/offlineQueue.ts`, `app/workout/[dayId].tsx`):
+- **Wachtrij-conflictstrategie**: altijd `upsert` op een client-gegenereerd
+  id, nooit `insert`. Dat is bewust gekozen boven "check eerst of het al
+  bestaat" — een extra read voor elke retry zou zelf ook kunnen falen zonder
+  netwerk, en is overbodig zodra de write toch idempotent is.
+  Verlies-scenario dat *niet* is opgevangen: als de app wordt geïnstalleerd
+  op een nieuw toestel of de lokale opslag wordt gewist terwijl er nog een
+  niet-gesynchte wachtrij stond, gaan die sets verloren. Voor Fase 1
+  geaccepteerd; een serverside "laatst bekende sync"-check zou dit later
+  kunnen dichten.
+- **Setnummering is client-side sessiestatus**: `setOrder` telt simpelweg
+  hoeveel sets er deze workout-sessie al voor die oefening zijn gelogd
+  (begint bij 1, in lokale React state). Geen server-roundtrip nodig om het
+  volgende setnummer te bepalen, wat offline-first noodzakelijk is.
+
+Nog open voor stap 5 e.v. (niet blokkerend voor nu, maar wel relevant bij het
+ontwerpen van de advies-weergave en verdere adaptatie):
 - **Bodyweight-progressie**: de kracht-progressie-engine werkt op gewicht;
   voor pure bodyweight-oefeningen (waar gewicht vaak 0 kg is) geeft dat geen
   zinvolle progressie. Nog te ontwerpen: repetitie-gebaseerde progressie of
   toegevoegd-gewicht-tracking voor die categorie.
+- **Cardio-invoer in het workout-scherm**: de UI heeft al een tak voor
+  `kind !== 'strength'`, maar toont nu alleen een placeholder-tekst in plaats
+  van een duur-/RPE-/hartslag-invoer. Niet blokkerend zolang de generator nog
+  geen cardio-oefeningen in programma's zet (zie volgende punt).
 - Hoe therapietrouw ("sessies overgeslagen") precies wordt gemeten (aantal
   gemiste sessies per periode?) voordat het schema wordt verkleind.
 - Hoe de interference-check (cardio niet vlak vóór zware krachtdag) precies
-  wordt ingebouwd in de weekplanner-output — de generator bouwt in stap 3
-  bewust nog geen cardio-dagen/blokken in programma's; dat volgt zodra de
-  interference-regel is uitgewerkt.
+  wordt ingebouwd in de weekplanner-output — de generator bouwt nog geen
+  cardio-dagen/blokken in programma's; dat volgt zodra de interference-regel
+  is uitgewerkt.
 
 ## Niet gebouwd (bewust, voor latere fases)
 
@@ -134,13 +175,17 @@ app/                        Expo Router routes
     index.tsx                  Intake-wizard: doel, ervaring, dagen/week, materiaal, review
   (tabs)/
     _layout.tsx                Tab navigator
-    index.tsx                   "Vandaag": eerstvolgend dagschema van het actieve programma
+    index.tsx                   "Vandaag": eerstvolgend dagschema + "Start workout"
+  workout/
+    [dayId].tsx                 Workout-invoer: stepper-UI per oefening, offline-first
 src/
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
     auth.tsx                   AuthProvider + useAuth hook
     profile.tsx                ProfileProvider + useProfile hook (profiles-rij van huidige user)
-    programs.ts                saveGeneratedProgram / fetchActiveProgram (Supabase I/O)
+    programs.ts                saveGeneratedProgram / fetchActiveProgram / fetchProgramDayWithExercises
+    offlineQueue.ts             FIFO sync-wachtrij (AsyncStorage) met idempotente upserts
+    id.ts                       generateId() — client-side UUID's voor offline-veilige writes
   theme/
     colors.ts                  Donker kleurenpalet
 packages/
