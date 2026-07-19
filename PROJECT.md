@@ -9,16 +9,18 @@ gaat. Daarom is de bouwvolgorde bewust: eerst de progressie-engines (het
 
 ## Stappen en status
 
-1. **Projectsetup: Expo + TypeScript + Supabase, auth (e-mail + magic link)** — ✅ gebouwd in deze sessie
-2. **Progressie-engines als pure functies met uitgebreide unit tests** — ✅ gebouwd in deze sessie
-3. Intake-flow + generator met 2 templates (full body 3×, upper/lower 4×) — nog niet gebouwd
+1. **Projectsetup: Expo + TypeScript + Supabase, auth (e-mail + magic link)** — ✅ gebouwd
+2. **Progressie-engines als pure functies met uitgebreide unit tests** — ✅ gebouwd
+3. **Intake-flow + generator met 2 templates (full body 3×, upper/lower 4×)** — ✅ gebouwd in deze sessie
 4. Workout-invoerscherm (sportschool-geoptimaliseerd, offline queue) — nog niet gebouwd
 5. Advies-weergave per oefening met uitleg-regel — nog niet gebouwd
 6. Simpele historie per oefening (lijst + lijngrafiek) — nog niet gebouwd
 
 Dit document beschrijft de aanpak voor alle 6 stappen zodat de architectuur
-consistent blijft, maar de opdracht voor deze sessie was expliciet beperkt tot
-stap 1 en 2.
+consistent blijft. Stap 1 en 2 kwamen uit een eerdere sessie; deze sessie
+voegde stap 3 toe (de vorige poging tot stap 3 liep tegen een fout aan
+voordat er iets gecommit was, dus is hier opnieuw en van de grond af
+opgebouwd).
 
 ## Architectuurkeuzes gemaakt in deze sessie
 
@@ -43,6 +45,27 @@ stap 1 en 2.
   `program_adjustments`) met RLS op iedere tabel. `program_adjustments` heeft
   bewust alléén een select-policy voor gebruikers: die tabel wordt gevuld door
   de adaptatieplanner (server-side/edge function), niet door de gebruiker zelf.
+- **Nieuw package `@fitness/program-generator`** (stap 3): zelfde opzet als
+  `progression-engine` — puur, geen I/O, los getest. `generateProgram(intake)`
+  neemt goal/experience/equipment/daysPerWeek en levert een volledig
+  `GeneratedProgram` (dagen + oefeningen + sets/reps/RIR) terug; de app-laag
+  serialiseert dat 1-op-1 naar `programs`/`program_days`/`day_exercises`
+  (`src/lib/programs.ts`). Templatekeuze is puur op `daysPerWeek` gebaseerd:
+  ≤3 dagen → full body, ≥4 → upper/lower. Elke template heeft 2 (full body)
+  of 4 (upper/lower) dag-archetypes die met een modulo-cyclus over
+  `daysPerWeek` dagen worden uitgerold, dus een 5-daagse upper/lower-week is
+  Upper A / Lower A / Upper B / Lower B / Upper A.
+- **Derde route-groep `(onboarding)`**: de root layout gate is uitgebreid van
+  `session ? tabs : auth` naar een 3-weg gate op basis van zowel `session`
+  (via `AuthProvider`) als het bestaan van een `profiles`-rij (via de nieuwe
+  `ProfileProvider`/`useProfile`, `src/lib/profile.tsx`). Ingelogd zonder
+  profiel → `(onboarding)` (de intake-wizard); ingelogd mét profiel →
+  `(tabs)`. Na het opslaan van de intake ververst de wizard de profile-context,
+  waarna de gate vanzelf naar `(tabs)` omslaat — geen handmatige navigatie.
+- **"Vandaag" toont het eerstvolgende dagschema**: `fetchActiveProgram` telt
+  hoeveel `workouts` al aan de dagen van het actieve programma hangen en
+  bepaalt daarmee `nextDayOrder = workoutCount % aantalDagen`. Zolang stap 4
+  (workout-invoer) er nog niet is, blijft dat altijd dag 1.
 
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
@@ -67,13 +90,32 @@ zodat ze makkelijk terug te vinden en aan te passen zijn:
   `maxRoundsBeforeTempoIncrease`, daarna pas het tempo-niveau. Er is geen reset
   van rondes bij tempo-verhoging verondersteld (opdracht specificeert dit niet).
 
-Nog open voor stap 3 e.v. (niet blokkerend voor nu, maar wel relevant bij het
-ontwerpen van de generator):
-- Exacte oefeningenlijst per template/spiergroep/materiaal-combinatie.
+Toegevoegd in stap 3 (`packages/program-generator/src/repSchemes.ts`,
+`templates.ts`, `exercises.ts`):
+- **Sets/reps/RIR per doel**: vaste tabel per `goal` × compound/isolation
+  (bv. strength = 5×3-6 RIR2 op compounds, hypertrophy = 4×8-12 RIR1).
+  Ervaring schuift de RIR: beginner +1 (meer marge), advanced -1 (dichter bij
+  falen), intermediate ongewijzigd.
+- **Gewichtstoename-stap per oefening**: 2.5 kg voor gym-compound-oefeningen
+  (barbell laadt in schijfparen), 1.25 kg voor al het overige — inclusief
+  bodyweight-oefeningen, ook al is "gewicht" daar minder betekenisvol; zie
+  open punt hieronder.
+- **Dag-archetypes A/B i.p.v. willekeurige variatie**: elke template-dag
+  heeft een vaste, deterministische oefeningkeuze per equipment. Geen
+  randomisatie, zodat de generator voorspelbaar en makkelijk te testen blijft.
+
+Nog open voor stap 4 e.v. (niet blokkerend voor nu, maar wel relevant bij het
+ontwerpen van workout-invoer en verdere adaptatie):
+- **Bodyweight-progressie**: de kracht-progressie-engine werkt op gewicht;
+  voor pure bodyweight-oefeningen (waar gewicht vaak 0 kg is) geeft dat geen
+  zinvolle progressie. Nog te ontwerpen: repetitie-gebaseerde progressie of
+  toegevoegd-gewicht-tracking voor die categorie.
 - Hoe therapietrouw ("sessies overgeslagen") precies wordt gemeten (aantal
   gemiste sessies per periode?) voordat het schema wordt verkleind.
 - Hoe de interference-check (cardio niet vlak vóór zware krachtdag) precies
-  wordt ingebouwd in de weekplanner-output.
+  wordt ingebouwd in de weekplanner-output — de generator bouwt in stap 3
+  bewust nog geen cardio-dagen/blokken in programma's; dat volgt zodra de
+  interference-regel is uitgewerkt.
 
 ## Niet gebouwd (bewust, voor latere fases)
 
@@ -84,17 +126,21 @@ meertaligheid — zoals in de opdracht vermeld, hier niet aangeraakt.
 
 ```
 app/                        Expo Router routes
-  _layout.tsx                Root layout: AuthProvider + Stack.Protected auth-gate
+  _layout.tsx                Root layout: Auth-/ProfileProvider + 3-weg Stack.Protected gate
   (auth)/
     index.tsx                 Login (e-mail + magic link)
     callback.tsx               Landing spot voor de magic-link redirect
+  (onboarding)/
+    index.tsx                  Intake-wizard: doel, ervaring, dagen/week, materiaal, review
   (tabs)/
     _layout.tsx                Tab navigator
-    index.tsx                   Placeholder "Vandaag"-scherm na inloggen
+    index.tsx                   "Vandaag": eerstvolgend dagschema van het actieve programma
 src/
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
     auth.tsx                   AuthProvider + useAuth hook
+    profile.tsx                ProfileProvider + useProfile hook (profiles-rij van huidige user)
+    programs.ts                saveGeneratedProgram / fetchActiveProgram (Supabase I/O)
   theme/
     colors.ts                  Donker kleurenpalet
 packages/
@@ -106,6 +152,15 @@ packages/
     tests/
       strength.test.ts
       cardio.test.ts
+  program-generator/          Pure, framework-onafhankelijke programma-generator
+    src/
+      types.ts
+      exercises.ts               Movement slots × equipment-varianten
+      repSchemes.ts               Sets/reps/RIR per doel + ervaring
+      templates.ts                Dag-archetypes + templatekeuze (full body / upper-lower)
+      generate.ts                 generateProgram(intake) -> GeneratedProgram
+    tests/
+      generate.test.ts
 supabase/
   migrations/
     0001_init.sql              Volledig Fase 1-datamodel + RLS
@@ -116,7 +171,7 @@ supabase/
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests progressie-engine (25 tests)
+npm run test           # unit tests progressie-engine + program-generator (38 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```
