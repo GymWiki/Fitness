@@ -1,0 +1,41 @@
+{
+  "name": "adaptive-fitness-app",
+  "version": "1.0.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run test --workspace=@fitness/progression-engine",
+    "test:watch": "npm run test:watch --workspace=@fitness/progression-engine"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "^57.0.6",
+    "@fitness/progression-engine": "*",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@supabase/supabase-js": "^2.48.1",
+    "expo": "~57.0.7",
+    "expo-constants": "^18.0.13",
+    "expo-linking": "^8.0.12",
+    "expo-router": "^6.0.24",
+    "expo-splash-screen": "^57.0.4",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-native": "0.86.0",
+    "react-native-safe-area-context": "^5.8.0",
+    "react-native-screens": "^4.26.2",
+    "react-native-url-polyfill": "^2.0.0",
+    "react-native-web": "^0.21.2"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  }
+}
