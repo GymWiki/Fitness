@@ -158,6 +158,50 @@ dus letterlijk achter de systeembalk geschoven. Fix: `useSafeAreaInsets()`
 op bij zowel de hoogte als de padding-onder, zodat het label altijd boven
 de systeembalk blijft — op elk toestel, met of zonder gesture-balk.
 
+**Extra (na Fase 1), stap 9: supercompensatie-indicator + wetenschappelijke
+FAQ.**
+
+*Supercompensatie-indicator.* Nieuwe, pure `estimateRecoveryState()` in
+`packages/progression-engine/src/recovery.ts` (additief — raakt
+`strength.ts`/`cardio.ts` niet aan): schat per spiergroep of je nog
+herstellende, in het optimale trainingsvenster, het venster aan het sluiten,
+of er voorbij bent, op basis van tijd sinds de laatste sessie voor die
+spiergroep, hoe zwaar die sessie was (sets × gemiddelde RIR × wel/geen
+compound-oefening) en spiergroep-grootte (klein/middel/groot, met andere
+basiswindows). Optioneel input voor spierpijn/slaap wordt door de functie
+al ondersteund maar de app vraagt dit nog niet uit (bewuste afbakening, zie
+aannames). App-laag (`src/lib/recovery.ts`) haalt de laatste sessie per
+spiergroep op met dezelfde cross-programma-aanpak als de historie-merge uit
+stap 7 — een goal-switch reset de herstelklok dus niet onterecht.
+`RecoveryIndicator` toont een kleurenbolletje (rood/groen/amber/grijs) per
+oefening op "Vandaag"; een prominente kaart verschijnt zodra minstens één
+spiergroep het venster "hersteld" bereikt, met een link naar de
+FAQ-uitleg.
+
+*Wetenschappelijke FAQ.* Nieuw `/faq`-scherm (bereikbaar via Profiel en via
+de herstel-kaart op Vandaag), met 8 vragen als gestructureerde data
+(`src/lib/faqContent.ts`) — doorzoekbaar, per categorie (Kracht/Herstel/
+Cardio) te filteren, per vraag inklapbaar, met minstens één klikbare bron
+(titel + auteurs + jaar + link) per vraag en een disclaimer dat het
+educatief is, geen medisch advies. **Elke bron is vóór het schrijven van de
+content daadwerkelijk gecontroleerd** (WebSearch, want directe WebFetch
+kreeg 403's van de meeste uitgevers) — en dat leverde twee correcties op
+de aangeleverde bronnenlijst op:
+- De opgegeven `PMC11679080`-link stond in de opdracht bij zowel de
+  supercompensatie- als de deload-vraag, maar is in werkelijkheid Nøst,
+  Aune & van den Tillaar (2024) over polarized cardiotraining — verplaatst
+  naar de cardio-vraag, waar hij wél bij past.
+- De opgegeven Pelland-bron combineerde twee verschillende papers onder
+  één jaar/DOI. Gesplitst in de juiste twee: Robinson, Pelland, Remmert et
+  al. (2024) over proximity-to-failure (gebruikt bij de RIR- en
+  double-progression-vragen) en Pelland, Remmert, Robinson, Hinson &
+  Zourdos (2025) over wekelijks volume/frequentie (gebruikt bij de
+  volume-vraag).
+- Voor supercompensatie en deload zelf, waar dus geen bruikbare bron
+  overbleef, zijn twee nieuwe, wél gecontroleerde bronnen toegevoegd: Bompa
+  & Buzzichelli's periodiseringstekstboek, en Bell et al. (2025) resp.
+  Meeusen et al. (2013) voor deload/overtraining.
+
 ## Architectuurkeuzes gemaakt in deze sessie
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
@@ -765,6 +809,42 @@ Nog open voor Fase 2:
   dus `insets.bottom = 0`); niet getest op een fysiek toestel met
   gesture-balk in deze sandbox.
 
+### Aannames bij stap 9 (supercompensatie + wetenschappelijke FAQ)
+
+- **Herstelvenster is per spiergroep, niet per trainingsdag**: de opdracht
+  bood beide opties ("per spiergroep (of per trainingsdag)"). Per
+  spiergroep gekozen omdat een trainingsdag meestal meerdere spiergroepen
+  combineert die niet allemaal in dezelfde herstelfase zitten — per
+  spiergroep is dus preciezer en dwingt niet tot een kunstmatig
+  gemiddelde. Op "Vandaag" tonen we het wel per oefening, zodat je alle
+  spiergroepen van de dag naast elkaar ziet.
+- **Geen spierpijn/slaap-invoer gebouwd**: de opdracht noemde dit expliciet
+  optioneel ("als je die uitvraagt"). `estimateRecoveryState()` accepteert
+  `soreness`/`sleepQuality` al (geteste parameters), maar er is nog geen UI
+  om ze te loggen — de app geeft ze simpelweg niet mee. Toevoegen later is
+  een pure UI/data-toevoeging, geen wijziging aan de functie zelf.
+  Zonder deze signalen leunt de schatting volledig op sets/RIR/compound-mix
+  uit de al gelogde sets, wat op zichzelf ook al literatuur-onderbouwd is.
+- **Basiswindows zijn een startpunt, geen vastgestelde waarheid** — expliciet
+  zo gecommuniceerd in zowel de code-comments, de FAQ-vraag over
+  supercompensatie, als de banner-tekst op Vandaag ("geschatte venster",
+  nooit een harde belofte).
+  De multiplier-logica (RIR/sets/compound/spiergroep-grootte) is een
+  redelijke, gedocumenteerde aanname, niet uit een specifieke studie
+  1-op-1 overgenomen — dat kán ook niet, want de literatuur geeft ranges,
+  geen formule.
+- **Cardio-herstel niet meegenomen**: de herstelindicator kijkt alleen naar
+  `kind = 'strength'`-sets. Cardio-vermoeidheid is een ander soort belasting
+  en de opdracht vroeg specifiek om spiergroep-herstel — bewust buiten
+  scope gehouden.
+- **Elke FAQ-bron is gecontroleerd vóór het schrijven van de content**, niet
+  achteraf aangenomen te kloppen. Zie de stap-9-samenvatting hierboven voor
+  de twee concrete fouten die dat opleverde (een verkeerd gelabelde bron,
+  een samengevoegde dubbele bron) en hoe ze zijn gecorrigeerd.
+- **Geen nieuwe dependency voor de FAQ-UI**: inklapbare kaarten en
+  categorie-chips zijn met bestaande primitieven (`Card`, `Pressable`,
+  `TextInput`) gebouwd, net als de rest van de app.
+
 ## Niet gebouwd (bewust, voor latere fases)
 
 Wearables, voeding, social features, AI-chat, een vrije van-nul-af-aan
@@ -797,6 +877,7 @@ app/                        Expo Router routes
   week-review.tsx               Week-overzicht: voorgestelde aanpassingen aan-/uitvinken en bevestigen
   adjustment-history.tsx        Uitleg-geschiedenis: alle program_adjustments, per week gegroepeerd
   switch-goal.tsx                Ander streeffysiek/doel kiezen: PhysiquePicker + bevestiging, archiveert oud programma
+  faq.tsx                        "Wetenschap": doorzoekbare, categoriseerbare FAQ met bronvermelding
 src/
   components/
     SyncStatusBadge.tsx        Offline / N niet gesynchroniseerd / Gesynchroniseerd — workout + Vandaag
@@ -805,6 +886,7 @@ src/
     LineChart.tsx                Herbruikbare SVG-lijngrafiek (uit historiescherm getrokken; ook gebruikt in Profiel)
     StatBars.tsx                  Geanimeerde stat-balken voor de streeffysiek-kaarten
     PhysiquePicker.tsx            Het ene streeffysiek-keuzescherm — onboarding, profiel-edit én switch-goal delen dit
+    RecoveryIndicator.tsx          Kleurenbolletje + label voor de supercompensatie-status per spiergroep
     icons.tsx                    Dependency-vrije SVG-icoonset (tab-iconen + PhysiqueSilhouette-placeholder)
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
@@ -830,6 +912,9 @@ src/
     adjustmentHistory.ts         fetchAdjustmentHistory() — alle program_adjustments van het actieve programma
     adjustmentLabels.ts          Gedeelde Nederlandse labels per AdjustmentType (week-review + geschiedenis)
     dates.ts                     formatShortDate() — gedeeld door workout-, historie- en geschiedenisscherm
+    recovery.ts                   fetchRecoveryEstimate() — cross-programma laatste-sessie-lookup + estimateRecoveryState()
+    faqContent.ts                 FAQ_ENTRIES + searchFaqEntries() — gestructureerde, doorzoekbare FAQ-content
+    faqContent.test.ts             Controleert dat elke FAQ-entry minstens één bron met geldige url/auteur/jaar heeft
   theme/
     colors.ts                  Donker kleurenpalet (uitgebreid met surfaceElevated/warning/muted-varianten)
     spacing.ts / radii.ts / typography.ts
@@ -840,9 +925,11 @@ packages/
       types.ts
       strength.ts               Double progression met RIR
       cardio.ts                 Polarized 80/20: computeWeeklyDistribution / adviseNextCardioType / adviseCardioProgression
+      recovery.ts                estimateRecoveryState() — supercompensatie-venster per spiergroep
     tests/
       strength.test.ts
       cardio.test.ts
+      recovery.test.ts
   program-generator/          Pure, framework-onafhankelijke programma-generator
     src/
       types.ts
@@ -905,7 +992,7 @@ Actions-tab (in plaats van stil niets te doen), dus het ergste geval is
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages + root src/lib samen (81 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (99 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```

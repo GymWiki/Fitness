@@ -36,6 +36,7 @@ function RootNavigator() {
         <Stack.Screen name="week-review" options={{ presentation: 'modal' }} />
         <Stack.Screen name="adjustment-history" options={{ presentation: 'modal' }} />
         <Stack.Screen name="switch-goal" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="faq" options={{ presentation: 'modal' }} />
       </Stack.Protected>
     </Stack>
   );
