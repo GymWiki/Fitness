@@ -1,19 +1,23 @@
-import type { EquipmentType, ExperienceLevel, Goal, IntakeAnswers } from '@fitness/program-generator';
+import type { EquipmentType, ExperienceLevel, IntakeAnswers } from '@fitness/program-generator';
 import { generateProgram } from '@fitness/program-generator';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
+import { ProgressDots } from '@/components/ProgressDots';
+import { PhysiqueSilhouette } from '@/components/icons';
+import { SelectableCard } from '@/components/SelectableCard';
 import { useAuth } from '@/lib/auth';
+import { BMI_CATEGORY_LABELS, BMI_CAVEAT, bmiCategory, calculateBmi } from '@/lib/bmi';
+import type { Gender } from '@/lib/profile';
 import { useProfile } from '@/lib/profile';
+import { PHYSIQUE_OPTIONS, goalForPhysique, type Physique } from '@/lib/physique';
 import { saveGeneratedProgram } from '@/lib/programs';
+import { saveMeasurement } from '@/lib/measurements';
 import { colors } from '@/theme/colors';
-
-const GOAL_OPTIONS: Array<{ value: Goal; label: string; description: string }> = [
-  { value: 'hypertrophy', label: 'Spieropbouw', description: 'Meer spiermassa, hypertrofie-gerichte volumes.' },
-  { value: 'strength', label: 'Kracht', description: 'Zwaarder worden op de basisoefeningen.' },
-  { value: 'endurance', label: 'Uithoudingsvermogen', description: 'Cardio-capaciteit opbouwen.' },
-  { value: 'fat_loss', label: 'Vetverlies', description: 'Vet verliezen met behoud van spiermassa.' },
-  { value: 'mixed', label: 'Gemixed', description: 'Een beetje van alles, geen specifieke piek.' },
-];
+import { radii } from '@/theme/radii';
+import { spacing } from '@/theme/spacing';
+import { typography } from '@/theme/typography';
 
 const EXPERIENCE_OPTIONS: Array<{ value: ExperienceLevel; label: string; description: string }> = [
   { value: 'beginner', label: 'Beginner', description: 'Minder dan een jaar consistent trainen.' },
@@ -27,24 +31,62 @@ const EQUIPMENT_OPTIONS: Array<{ value: EquipmentType; label: string; descriptio
   { value: 'bodyweight', label: 'Eigen lichaamsgewicht', description: 'Geen materiaal, alleen bodyweight-oefeningen.' },
 ];
 
+const GENDER_OPTIONS: Array<{ value: Gender; label: string }> = [
+  { value: 'female', label: 'Vrouw' },
+  { value: 'male', label: 'Man' },
+  { value: 'other', label: 'Anders' },
+];
+
 const DAYS_PER_WEEK_OPTIONS = [2, 3, 4, 5, 6];
 
-type Step = 'goal' | 'experience' | 'days' | 'equipment' | 'review';
-const STEPS: Step[] = ['goal', 'experience', 'days', 'equipment', 'review'];
+const PHYSIQUE_ICON_VARIANT: Record<Physique, 'muscular' | 'lean' | 'strong' | 'endurance' | 'balanced'> = {
+  muscular_athletic: 'muscular',
+  lean_defined: 'lean',
+  strong_powerful: 'strong',
+  fit_enduring: 'endurance',
+  balanced_general: 'balanced',
+};
+
+type Step = 'physique' | 'measurements' | 'preferences' | 'summary';
+const STEPS: Step[] = ['physique', 'measurements', 'preferences', 'summary'];
+
+function parsePositiveFloat(value: string): number | null {
+  const parsed = Number.parseFloat(value.replace(',', '.'));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
 
 export default function IntakeScreen() {
   const { session } = useAuth();
   const { refresh } = useProfile();
 
   const [stepIndex, setStepIndex] = useState(0);
-  const [goal, setGoal] = useState<Goal | null>(null);
+
+  const [physique, setPhysique] = useState<Physique | null>(null);
+
+  const [weightKg, setWeightKg] = useState('');
+  const [heightCm, setHeightCm] = useState('');
+  const [bodyFatPercent, setBodyFatPercent] = useState('');
+  const [gender, setGender] = useState<Gender | null>(null);
+  const [birthYear, setBirthYear] = useState('');
+  const [targetWeightKg, setTargetWeightKg] = useState('');
+
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel | null>(null);
   const [daysPerWeek, setDaysPerWeek] = useState<number | null>(null);
   const [equipment, setEquipment] = useState<EquipmentType | null>(null);
+
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const step = STEPS[stepIndex]!;
+
+  const parsedWeightKg = parsePositiveFloat(weightKg);
+  const parsedHeightCm = parsePositiveFloat(heightCm);
+  const parsedBodyFatPercent = bodyFatPercent.trim() === '' ? null : parsePositiveFloat(bodyFatPercent);
+  const parsedTargetWeightKg = targetWeightKg.trim() === '' ? null : parsePositiveFloat(targetWeightKg);
+  const parsedBirthYear = birthYear.trim() === '' ? null : Number.parseInt(birthYear, 10);
+  const bmi = parsedWeightKg && parsedHeightCm ? calculateBmi(parsedWeightKg, parsedHeightCm) : null;
+
+  const goal = physique ? goalForPhysique(physique) : null;
 
   const intake: IntakeAnswers | null = useMemo(() => {
     if (!goal || !experienceLevel || !daysPerWeek || !equipment) return null;
@@ -54,10 +96,9 @@ export default function IntakeScreen() {
   const program = useMemo(() => (intake ? generateProgram(intake) : null), [intake]);
 
   const canGoNext =
-    (step === 'goal' && goal !== null) ||
-    (step === 'experience' && experienceLevel !== null) ||
-    (step === 'days' && daysPerWeek !== null) ||
-    (step === 'equipment' && equipment !== null);
+    (step === 'physique' && physique !== null) ||
+    (step === 'measurements' && parsedWeightKg !== null && parsedHeightCm !== null) ||
+    (step === 'preferences' && experienceLevel !== null && daysPerWeek !== null && equipment !== null);
 
   function goNext() {
     if (stepIndex < STEPS.length - 1) setStepIndex(stepIndex + 1);
@@ -68,11 +109,21 @@ export default function IntakeScreen() {
   }
 
   async function handleStart() {
-    if (!intake || !program || !session || isSaving) return;
+    if (!intake || !program || !physique || !session || !parsedWeightKg || !parsedHeightCm || isSaving) return;
     setIsSaving(true);
     setError(null);
     try {
-      await saveGeneratedProgram(session.user.id, intake, program);
+      await saveGeneratedProgram(session.user.id, intake, program, {
+        targetPhysique: physique,
+        gender,
+        birthYear: parsedBirthYear,
+        targetWeightKg: parsedTargetWeightKg,
+      });
+      await saveMeasurement(session.user.id, {
+        weightKg: parsedWeightKg,
+        heightCm: parsedHeightCm,
+        bodyFatPercent: parsedBodyFatPercent,
+      });
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Onbekende fout bij het opslaan van je programma.');
@@ -82,31 +133,126 @@ export default function IntakeScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ProgressDots total={STEPS.length} currentIndex={stepIndex} />
       <Text style={styles.progress}>
         Stap {stepIndex + 1} van {STEPS.length}
       </Text>
 
-      {step === 'goal' && (
-        <StepPicker
-          title="Wat is je doel?"
-          options={GOAL_OPTIONS}
-          selected={goal}
-          onSelect={setGoal}
-        />
-      )}
-
-      {step === 'experience' && (
-        <StepPicker
-          title="Wat is je trainingservaring?"
-          options={EXPERIENCE_OPTIONS}
-          selected={experienceLevel}
-          onSelect={setExperienceLevel}
-        />
-      )}
-
-      {step === 'days' && (
+      {step === 'physique' && (
         <View>
-          <Text style={styles.title}>Hoeveel dagen per week train je?</Text>
+          <Text style={styles.title}>Wat is je streeffysiek?</Text>
+          <Text style={styles.body}>
+            Dit bepaalt het trainingsdoel achter je schema — geen oordeel, gewoon de richting die we inslaan.
+          </Text>
+          {PHYSIQUE_OPTIONS.map((option) => (
+            <SelectableCard
+              key={option.value}
+              label={option.label}
+              description={option.description}
+              selected={physique === option.value}
+              onPress={() => setPhysique(option.value)}
+              icon={<PhysiqueSilhouette color={physique === option.value ? colors.accent : colors.textSecondary} variant={PHYSIQUE_ICON_VARIANT[option.value]} />}
+            />
+          ))}
+        </View>
+      )}
+
+      {step === 'measurements' && (
+        <View>
+          <Text style={styles.title}>Waar sta je nu?</Text>
+          <Text style={styles.body}>Schatten mag — je kunt dit later altijd bijwerken.</Text>
+
+          <FieldLabel>Gewicht (kg)</FieldLabel>
+          <TextInput
+            style={styles.input}
+            keyboardType="decimal-pad"
+            placeholder="bv. 75"
+            placeholderTextColor={colors.textTertiary}
+            value={weightKg}
+            onChangeText={setWeightKg}
+          />
+
+          <FieldLabel>Lengte (cm)</FieldLabel>
+          <TextInput
+            style={styles.input}
+            keyboardType="decimal-pad"
+            placeholder="bv. 178"
+            placeholderTextColor={colors.textTertiary}
+            value={heightCm}
+            onChangeText={setHeightCm}
+          />
+
+          <FieldLabel>Vetpercentage (optioneel)</FieldLabel>
+          <TextInput
+            style={styles.input}
+            keyboardType="decimal-pad"
+            placeholder="Schatten mag"
+            placeholderTextColor={colors.textTertiary}
+            value={bodyFatPercent}
+            onChangeText={setBodyFatPercent}
+          />
+
+          {bmi !== null && (
+            <Card style={styles.bmiCard}>
+              <Text style={styles.bmiValue}>
+                BMI {bmi.toFixed(1)} · {BMI_CATEGORY_LABELS[bmiCategory(bmi)]}
+              </Text>
+              <Text style={styles.bmiCaveat}>{BMI_CAVEAT}</Text>
+            </Card>
+          )}
+
+          <FieldLabel>Geslacht (optioneel)</FieldLabel>
+          <View style={styles.chipRow}>
+            {GENDER_OPTIONS.map((option) => (
+              <Pressable
+                key={option.value}
+                style={[styles.chip, gender === option.value && styles.chipSelected]}
+                onPress={() => setGender(gender === option.value ? null : option.value)}
+              >
+                <Text style={[styles.chipText, gender === option.value && styles.chipTextSelected]}>{option.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <FieldLabel>Geboortejaar (optioneel)</FieldLabel>
+          <TextInput
+            style={styles.input}
+            keyboardType="number-pad"
+            placeholder="bv. 1994"
+            placeholderTextColor={colors.textTertiary}
+            value={birthYear}
+            onChangeText={setBirthYear}
+            maxLength={4}
+          />
+
+          <FieldLabel>Streefgewicht (optioneel, kg)</FieldLabel>
+          <TextInput
+            style={styles.input}
+            keyboardType="decimal-pad"
+            placeholder="Optioneel"
+            placeholderTextColor={colors.textTertiary}
+            value={targetWeightKg}
+            onChangeText={setTargetWeightKg}
+          />
+        </View>
+      )}
+
+      {step === 'preferences' && (
+        <View>
+          <Text style={styles.title}>Jouw trainingsvoorkeuren</Text>
+
+          <FieldLabel>Trainingservaring</FieldLabel>
+          {EXPERIENCE_OPTIONS.map((option) => (
+            <SelectableCard
+              key={option.value}
+              label={option.label}
+              description={option.description}
+              selected={experienceLevel === option.value}
+              onPress={() => setExperienceLevel(option.value)}
+            />
+          ))}
+
+          <FieldLabel>Dagen per week</FieldLabel>
           <View style={styles.daysRow}>
             {DAYS_PER_WEEK_OPTIONS.map((value) => (
               <Pressable
@@ -114,31 +260,36 @@ export default function IntakeScreen() {
                 style={[styles.dayButton, daysPerWeek === value && styles.dayButtonSelected]}
                 onPress={() => setDaysPerWeek(value)}
               >
-                <Text style={[styles.dayButtonText, daysPerWeek === value && styles.optionLabelSelected]}>
-                  {value}
-                </Text>
+                <Text style={[styles.dayButtonText, daysPerWeek === value && styles.dayButtonTextSelected]}>{value}</Text>
               </Pressable>
             ))}
           </View>
+
+          <FieldLabel>Materiaal</FieldLabel>
+          {EQUIPMENT_OPTIONS.map((option) => (
+            <SelectableCard
+              key={option.value}
+              label={option.label}
+              description={option.description}
+              selected={equipment === option.value}
+              onPress={() => setEquipment(option.value)}
+            />
+          ))}
         </View>
       )}
 
-      {step === 'equipment' && (
-        <StepPicker
-          title="Welk materiaal heb je?"
-          options={EQUIPMENT_OPTIONS}
-          selected={equipment}
-          onSelect={setEquipment}
-        />
-      )}
-
-      {step === 'review' && program && (
+      {step === 'summary' && program && physique && (
         <View>
-          <Text style={styles.title}>{program.name}</Text>
-          <Text style={styles.body}>
-            Op basis van je antwoorden hebben we dit programma samengesteld. Je kunt gewichten pas
-            invullen zodra je een workout gaat loggen.
-          </Text>
+          <Card elevated style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Jouw doel</Text>
+            <Text style={styles.summaryGoal}>
+              {PHYSIQUE_OPTIONS.find((option) => option.value === physique)!.label}
+            </Text>
+            <Text style={styles.summaryBody}>
+              We bouwen een {program.name.toLowerCase()}-schema van {intake!.daysPerWeek} dagen per week.
+            </Text>
+          </Card>
+
           {program.days.map((day) => (
             <View key={day.dayOrder} style={styles.dayCard}>
               <Text style={styles.dayCardTitle}>
@@ -165,14 +316,10 @@ export default function IntakeScreen() {
           <View />
         )}
 
-        {step === 'review' ? (
-          <Pressable
-            style={[styles.primaryButton, isSaving && styles.primaryButtonDisabled]}
-            onPress={handleStart}
-            disabled={isSaving}
-          >
-            <Text style={styles.primaryButtonText}>{isSaving ? 'Bezig...' : 'Start programma'}</Text>
-          </Pressable>
+        {step === 'summary' ? (
+          <Button onPress={handleStart} loading={isSaving}>
+            Start programma
+          </Button>
         ) : (
           <Pressable
             style={[styles.primaryButton, !canGoNext && styles.primaryButtonDisabled]}
@@ -187,35 +334,8 @@ export default function IntakeScreen() {
   );
 }
 
-function StepPicker<T extends string>({
-  title,
-  options,
-  selected,
-  onSelect,
-}: {
-  title: string;
-  options: Array<{ value: T; label: string; description: string }>;
-  selected: T | null;
-  onSelect: (value: T) => void;
-}) {
-  return (
-    <View>
-      <Text style={styles.title}>{title}</Text>
-      {options.map((option) => {
-        const isSelected = selected === option.value;
-        return (
-          <Pressable
-            key={option.value}
-            style={[styles.optionCard, isSelected && styles.optionCardSelected]}
-            onPress={() => onSelect(option.value)}
-          >
-            <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>{option.label}</Text>
-            <Text style={styles.optionDescription}>{option.description}</Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
+function FieldLabel({ children }: { children: string }) {
+  return <Text style={styles.fieldLabel}>{children}</Text>;
 }
 
 const styles = StyleSheet.create({
@@ -224,56 +344,79 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: 24,
+    padding: spacing.xxl,
     paddingTop: 64,
-    gap: 20,
+    gap: spacing.xl,
   },
   progress: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    ...typography.label,
+    marginTop: -spacing.md,
   },
   title: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 16,
+    ...typography.title,
+    marginBottom: spacing.sm,
   },
   body: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 21,
-    marginBottom: 16,
+    ...typography.bodySecondary,
+    marginBottom: spacing.lg,
   },
-  optionCard: {
+  fieldLabel: {
+    ...typography.label,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  input: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-  },
-  optionCardSelected: {
-    borderColor: colors.accent,
-  },
-  optionLabel: {
-    color: colors.textPrimary,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     fontSize: 16,
+    color: colors.textPrimary,
+  },
+  bmiCard: {
+    marginTop: spacing.lg,
+    gap: spacing.xs,
+  },
+  bmiValue: {
+    color: colors.accent,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  bmiCaveat: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  chip: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  chipSelected: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentMuted,
+  },
+  chipText: {
+    color: colors.textSecondary,
+    fontSize: 14,
     fontWeight: '600',
   },
-  optionLabelSelected: {
+  chipTextSelected: {
     color: colors.accent,
-  },
-  optionDescription: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    marginTop: 4,
   },
   daysRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: spacing.sm,
+    flexWrap: 'wrap',
   },
   dayButton: {
     width: 52,
@@ -287,25 +430,45 @@ const styles = StyleSheet.create({
   },
   dayButtonSelected: {
     borderColor: colors.accent,
+    backgroundColor: colors.accentMuted,
   },
   dayButtonText: {
     color: colors.textPrimary,
     fontSize: 18,
     fontWeight: '700',
   },
+  dayButtonTextSelected: {
+    color: colors.accent,
+  },
+  summaryCard: {
+    marginBottom: spacing.lg,
+    gap: spacing.xs,
+  },
+  summaryLabel: {
+    ...typography.label,
+  },
+  summaryGoal: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  summaryBody: {
+    ...typography.bodySecondary,
+    marginTop: spacing.xs,
+  },
   dayCard: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: radii.md,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
   },
   dayCardTitle: {
     color: colors.textPrimary,
     fontSize: 15,
     fontWeight: '700',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   exerciseLine: {
     color: colors.textSecondary,
@@ -315,17 +478,17 @@ const styles = StyleSheet.create({
   error: {
     color: colors.danger,
     fontSize: 14,
-    marginTop: 8,
+    marginTop: spacing.sm,
   },
   nav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: spacing.sm,
   },
   secondaryButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 8,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.sm,
   },
   secondaryButtonText: {
     color: colors.textSecondary,
@@ -334,9 +497,9 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     backgroundColor: colors.accent,
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 28,
+    borderRadius: radii.md,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.xxl,
     alignItems: 'center',
   },
   primaryButtonDisabled: {

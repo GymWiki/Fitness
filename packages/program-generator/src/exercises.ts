@@ -126,3 +126,27 @@ export const MOVEMENT_SLOTS: Record<string, MovementSlot> = {
     },
   },
 };
+
+/**
+ * Candidate exercise names a user could swap into a schema slot: every A/B
+ * variant, across every movement slot, that targets the same muscle group
+ * and is available with the given equipment — minus whatever's already
+ * there. Used by the Schema tab's "vervang oefening" action so a swap always
+ * stays within the same muscle target instead of accidentally turning a leg
+ * day exercise into a biceps exercise.
+ */
+export function candidateExercisesForMuscleGroup(
+  muscleGroup: string,
+  equipment: EquipmentType,
+  excludeName?: string,
+): string[] {
+  const names = new Set<string>();
+  for (const slot of Object.values(MOVEMENT_SLOTS)) {
+    if (slot.muscleGroup !== muscleGroup) continue;
+    for (const variant of Object.values(slot.variants)) {
+      names.add(variant[equipment]);
+    }
+  }
+  if (excludeName) names.delete(excludeName);
+  return [...names].sort();
+}
