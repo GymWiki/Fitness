@@ -99,6 +99,47 @@ een wissel gewoon doorpakt op oefeningen die in beide schema's voorkomen —
 zie de aannames-sectie voor de details en de reden waarom dit géén
 databasemigratie nodig had.
 
+**Extra (na Fase 1), stap 8: bugfixes — schemawissel-foutmelding en
+navbar-clipping.**
+
+*Bug 1 — "Kon niet wisselen van schema".* Deze sessie had geen MCP-toegang
+tot het echte Supabase-project van de app (alleen twee niet-gerelateerde
+projecten waren gekoppeld), dus kon niet rechtstreeks in de live logs
+gekeken worden. Wel grondig uitgesloten via codeonderzoek: geen
+unique-constraint blokkeert een tweede programma, de RLS-policies volgen
+exact hetzelfde patroon als de al werkende onboarding-flow, en een nieuwe
+gemockte test (`src/lib/switchGoal.test.ts`) bewijst dat de
+volgorde-logica zelf klopt (nieuw programma altijd eerst, oud programma
+wordt nooit aangeraakt als het aanmaken faalt). **Belangrijkste bevinding:
+er bestaat in deze repo geen enkele CI/CD-pipeline die migraties op de
+live database toepast** (geen GitHub Action, geen Vercel-hook, geen
+`supabase/config.toml`) — migraties `0002` en `0003` zijn in eerdere
+sessies alleen als bestand toegevoegd. Als die niet handmatig (`supabase
+db push` of via de SQL-editor) zijn uitgevoerd, mist `profiles` de kolom
+`target_physique` die `switchGoal` via `updateProfile` nodig heeft, en
+faalt de wissel gegarandeerd. **Dit is niet zelf geverifieerd/opgelost** —
+vereist bevestiging van de gebruiker of toegang tot het juiste
+Supabase-project. Wel opgelost: de foutmelding was niet nutteloos generiek
+door een bug (`PostgrestError extends Error` in de geïnstalleerde
+supabase-js-versie, dus `err.message` kwam wél door), maar was wél te
+mager — `hint`/`code` (waar Postgres vaak de letterlijke fix in zet, bv.
+bij een RLS-fout) gingen verloren. Nieuwe `src/lib/describeError.ts` logt
+het volledige foutobject en toont voortaan message + hint + code in de UI.
+`switchGoal.ts` labelt daarnaast elke stap (nieuw programma aanmaken /
+oud archiveren / profiel bijwerken / aanpassing loggen), zodat een fout
+meteen zegt wélke stap brak.
+
+*Bug 2 — navbar-labels afgesneden.* Root cause: `app/(tabs)/_layout.tsx`
+had een vaste `tabBarStyle.height` (64) en vaste `paddingBottom` (10),
+zonder rekening te houden met de onderste safe-area-inset (de
+home-indicator/gesture-balk). Op een toestel zonder die balk paste de
+inhoud er nog net in; op een toestel mét (die ~34px opeist) werd het label
+dus letterlijk achter de systeembalk geschoven. Fix: `useSafeAreaInsets()`
+(al beschikbaar — `expo-router`'s `ExpoRoot` wrapt de app al in een
+`SafeAreaProvider`, dus geen extra provider nodig) telt `insets.bottom` nu
+op bij zowel de hoogte als de padding-onder, zodat het label altijd boven
+de systeembalk blijft — op elk toestel, met of zonder gesture-balk.
+
 ## Architectuurkeuzes gemaakt in deze sessie
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
@@ -672,6 +713,36 @@ Nog open voor Fase 2:
   streeffysiek/doel-wijzigingen lopen nu via de nieuwe, correcte
   switch-flow.
 
+### Aannames bij stap 8 (bugfixes)
+
+- **Root cause van bug 1 niet 100% bevestigd, wel met hoge zekerheid
+  vastgesteld**: zonder toegang tot het echte Supabase-project kon de
+  daadwerkelijke Postgres-foutmelding niet ingezien worden. Constraint- en
+  RLS-oorzaken zijn met code-onderzoek uitgesloten; een volgorde-bug in
+  `switchGoal` zelf is uitgesloten met een nieuwe, gemockte test. Wat overblijft
+  (en het enige waarvoor géén automatisering in deze repo bestaat) is dat
+  migraties 0002/0003 niet op de live database zijn toegepast — dit moet
+  de gebruiker bevestigen of zelf oplossen (`supabase db push`), of mij
+  toegang geven tot het juiste project zodat ik het kan verifiëren.
+- **`describeError` is bewust alleen toegepast op het schemawissel-pad**,
+  niet als repo-brede refactor van elk catch-blok. Andere schermen gebruiken
+  nog het oudere `err instanceof Error ? err.message : '...'`-patroon; dat
+  werkt (PostgrestError extendt Error in de geïnstalleerde versie), maar
+  toont geen `hint`/`code`. Een vervolgstap zou `describeError` overal
+  kunnen hergebruiken.
+- **Eerste gemockte Supabase-test in dit project**
+  (`src/lib/switchGoal.test.ts`): een kleine, met de hand geschreven fluent
+  mock van de query-builder (geen library), omdat er nog geen
+  Supabase-testinfrastructuur bestond. Bewust beperkt tot wat nodig was om
+  de volgorde/argumenten van `switchGoal`'s schrijfacties te verifiëren —
+  geen poging om echte RLS/constraint-gedrag te simuleren (dat kán alleen
+  tegen een echte Postgres-instantie, zie hierboven).
+- **Navbar-hoogte is nu toestelafhankelijk** (`BASE_TAB_BAR_HEIGHT +
+  insets.bottom`), in plaats van een vaste waarde — bewust, want dat was
+  precies de bug. Getest via bundle-export + Playwright-smoketest (web,
+  dus `insets.bottom = 0`); niet getest op een fysiek toestel met
+  gesture-balk in deze sandbox.
+
 ## Niet gebouwd (bewust, voor latere fases)
 
 Wearables, voeding, social features, AI-chat, een vrije van-nul-af-aan
@@ -728,6 +799,7 @@ src/
     id.ts                       generateId() — client-side UUID's voor offline-veilige writes
     history.ts                  fetchExerciseHistory() (per oefeningsnaam, over alle programma's) + fetchCardioHistory()
     exerciseHistoryMerge.ts       groupSetLogsIntoSessions() — pure, geteste groepeerlogica achter fetchExerciseHistory
+    describeError.ts              Zet een Postgrest/Error-object om in message + hint + code, i.p.v. een generieke fallback
     exerciseHistoryMerge.test.ts  Bewijst: logs overleven een schemawissel + de kracht-engine pakt ze op
     weekReview.ts                fetchWeekReview() / applyWeekReview() — databrug naar @fitness/adaptation-planner
     adjustmentHistory.ts         fetchAdjustmentHistory() — alle program_adjustments van het actieve programma
@@ -782,7 +854,7 @@ vitest.config.ts               Root-scope testrunner voor pure src/lib-modules (
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages + root src/lib samen (79 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (81 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```
