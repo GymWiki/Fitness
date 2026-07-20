@@ -244,6 +244,7 @@ function DayCard({
 export default function SchemaScreen() {
   const { session } = useAuth();
   const { profile } = useProfile();
+  const router = useRouter();
   const [program, setProgram] = useState<SchemaProgram | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -286,8 +287,15 @@ export default function SchemaScreen() {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>Schema</Text>
-        {program ? <Text style={styles.subtitle}>{program.name}</Text> : null}
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.title}>Schema</Text>
+            {program ? <Text style={styles.subtitle}>{program.name}</Text> : null}
+          </View>
+          <Pressable onPress={() => router.push('/switch-goal')}>
+            <Text style={styles.switchGoalLink}>Ander doel kiezen</Text>
+          </Pressable>
+        </View>
 
         {isLoading && (
           <View style={styles.loadingRow}>
@@ -329,12 +337,23 @@ const styles = StyleSheet.create({
     paddingTop: 48,
     gap: spacing.md,
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
   title: {
     ...typography.display,
   },
   subtitle: {
     ...typography.bodySecondary,
     marginBottom: spacing.sm,
+  },
+  switchGoalLink: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: spacing.xs,
   },
   loadingRow: {
     marginTop: spacing.xxl,

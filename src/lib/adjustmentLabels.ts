@@ -6,6 +6,7 @@ export const ADJUSTMENT_LABELS: Record<AdjustmentType, string> = {
   volume_decrease: 'Volume omlaag',
   deload: 'Deload-week',
   reduce_days: 'Schema verkleinen',
+  goal_changed: 'Doel gewijzigd',
 };
 
 export function adjustmentTitle(type: AdjustmentType, exerciseName?: string | null): string {

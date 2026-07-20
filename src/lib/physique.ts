@@ -61,3 +61,12 @@ export function physiqueOption(physique: Physique): PhysiqueOption {
   if (!option) throw new Error(`Unknown physique: ${physique}`);
   return option;
 }
+
+/** Dutch labels for the Goal domain type itself (distinct from the physique labels) — used in "Doel gewijzigd van X naar Y". */
+export const GOAL_LABELS: Record<Goal, string> = {
+  hypertrophy: 'hypertrofie',
+  strength: 'kracht',
+  endurance: 'conditie',
+  fat_loss: 'afvallen',
+  mixed: 'een mix',
+};

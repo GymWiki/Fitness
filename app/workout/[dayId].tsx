@@ -194,6 +194,7 @@ interface LoggedSet {
 }
 
 function StrengthLogger({ exercise, workoutId }: { exercise: WorkoutExercise; workoutId: string }) {
+  const { session } = useAuth();
   const [history, setHistory] = useState<HistorySession[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -203,13 +204,14 @@ function StrengthLogger({ exercise, workoutId }: { exercise: WorkoutExercise; wo
   const [rir, setRir] = useState(exercise.targetRIR ?? 1);
 
   useEffect(() => {
+    if (!session) return;
     setIsHistoryLoading(true);
     setHistoryError(null);
-    fetchExerciseHistory(exercise.id)
+    fetchExerciseHistory(session.user.id, exercise.exerciseName)
       .then(setHistory)
       .catch((err) => setHistoryError(err instanceof Error ? err.message : 'Kon historie niet laden.'))
       .finally(() => setIsHistoryLoading(false));
-  }, [exercise.id]);
+  }, [session, exercise.exerciseName]);
 
   const advice = useMemo<StrengthAdvice | null>(() => {
     if (history.length === 0) return null;

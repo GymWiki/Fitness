@@ -5,15 +5,13 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { ProgressDots } from '@/components/ProgressDots';
-import { StatBars } from '@/components/StatBars';
-import { PhysiqueSilhouette } from '@/components/icons';
+import { PhysiquePicker } from '@/components/PhysiquePicker';
 import { SelectableCard } from '@/components/SelectableCard';
 import { useAuth } from '@/lib/auth';
 import { BMI_CATEGORY_LABELS, BMI_CAVEAT, bmiCategory, calculateBmi } from '@/lib/bmi';
 import type { Gender } from '@/lib/profile';
 import { useProfile } from '@/lib/profile';
 import { PHYSIQUE_OPTIONS, goalForPhysique, type Physique } from '@/lib/physique';
-import { PHYSIQUE_STATS } from '@/lib/physiqueStats';
 import { saveGeneratedProgram } from '@/lib/programs';
 import { saveMeasurement } from '@/lib/measurements';
 import { colors } from '@/theme/colors';
@@ -40,14 +38,6 @@ const GENDER_OPTIONS: Array<{ value: Gender; label: string }> = [
 ];
 
 const DAYS_PER_WEEK_OPTIONS = [2, 3, 4, 5, 6];
-
-const PHYSIQUE_ICON_VARIANT: Record<Physique, 'muscular' | 'lean' | 'strong' | 'endurance' | 'balanced'> = {
-  muscular_athletic: 'muscular',
-  lean_defined: 'lean',
-  strong_powerful: 'strong',
-  fit_enduring: 'endurance',
-  balanced_general: 'balanced',
-};
 
 type Step = 'physique' | 'measurements' | 'preferences' | 'summary';
 const STEPS: Step[] = ['physique', 'measurements', 'preferences', 'summary'];
@@ -146,21 +136,7 @@ export default function IntakeScreen() {
           <Text style={styles.body}>
             Dit bepaalt het trainingsdoel achter je schema — geen oordeel, gewoon de richting die we inslaan.
           </Text>
-          {PHYSIQUE_OPTIONS.map((option) => (
-            <SelectableCard
-              key={option.value}
-              label={option.label}
-              description={option.description}
-              selected={physique === option.value}
-              onPress={() => setPhysique(option.value)}
-              icon={<PhysiqueSilhouette color={physique === option.value ? colors.accent : colors.textSecondary} variant={PHYSIQUE_ICON_VARIANT[option.value]} />}
-            >
-              <StatBars stats={PHYSIQUE_STATS[option.value]} selected={physique === option.value} />
-            </SelectableCard>
-          ))}
-          <Text style={styles.statsDisclaimer}>
-            De balken tonen waar het schema op traint, niet een belofte over hoe je eruit komt te zien.
-          </Text>
+          <PhysiquePicker selected={physique} onSelect={setPhysique} />
         </View>
       )}
 
@@ -366,12 +342,6 @@ const styles = StyleSheet.create({
   body: {
     ...typography.bodySecondary,
     marginBottom: spacing.lg,
-  },
-  statsDisclaimer: {
-    color: colors.textTertiary,
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: spacing.xs,
   },
   fieldLabel: {
     ...typography.label,
