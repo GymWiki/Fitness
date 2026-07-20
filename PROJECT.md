@@ -45,6 +45,17 @@ reden-string terug. Deze stap maakt dat consistent (één veldnaam,
 een "Waarom?"-uitklap toe op de adviesschermen, en bouwt een nieuw
 uitleg-geschiedenisscherm dat rechtstreeks uit `program_adjustments` leest.
 
+**Extra (na Fase 1), stap 4: offline-ondersteuning.** Schrijven was al
+volledig offline-veilig (de wachtrij uit stap 4 van Fase 1), maar lezen niet:
+het workout-scherm, de historie en "Vandaag" deden allemaal een live
+Supabase-call zónder cache-fallback, dus zonder bereik faalde zelfs het
+*openen* van een training. Deze stap voegt een network-first-met-cache-
+fallback laag toe aan alle reads die de workout-flow nodig heeft (dagschema,
+sessiegeschiedenis voor advies, actief programma), plus een subtiele
+sync-status-indicator. Zie de aparte aannames-sectie voor de details en een
+belangrijke kanttekening bij hoe dit in dit sandbox-environment geverifieerd
+kon worden (geen live backend, geen echt toestel).
+
 ## Architectuurkeuzes gemaakt in deze sessie
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
@@ -264,6 +275,53 @@ uitleg-geschiedenisscherm dat rechtstreeks uit `program_adjustments` leest.
 - **`formatShortDate` samengevoegd**: stond drie keer bijna identiek
   gedupliceerd (workout-, historie- en nu ook het geschiedenisscherm);
   verhuisd naar `src/lib/dates.ts`.
+- **`src/lib/offlineCache.ts` — network-first met cache-fallback**: één
+  generieke `fetchWithCache(key, fetcher)` probeert eerst het netwerk,
+  cachet het resultaat in AsyncStorage bij succes, en valt bij een
+  netwerkfout terug op de laatst gecachte waarde voor die sleutel. Gooit
+  alleen nog een fout als er *niets* te tonen valt (nooit eerder geladen én
+  geen netwerk). Bewust eenrichtingsverkeer: de cache wordt alléén
+  beschreven vanuit een geslaagde netwerk-read, nooit vanuit lokale invoer —
+  dat loopt via de bestaande, losstaande sync-wachtrij (`offlineQueue.ts`).
+  Dat scheiden is wat garandeert dat lokale invoer nooit stilletjes
+  overschreven wordt door oudere serverdata: schrijven en lezen delen geen
+  opslag.
+- **Toegepast op `fetchActiveProgram`, `fetchProgramDayWithExercises`,
+  `fetchExerciseHistory`, `fetchCardioHistory`**: precies de reads die de
+  workout-flow nodig heeft om te *starten* zonder bereik (dagschema) en om
+  het gewichtsadvies te *berekenen* zonder bereik (sessiegeschiedenis — de
+  progressie-engines zijn al pure functies, dus zodra de historie er is,
+  werkt het advies vanzelf offline mee). `fetchWeekReview` is bewust **niet**
+  gecached: die heeft juist een verse workout-telling nodig om te bepalen of
+  er een nieuwe week klaarstaat, en een verouderd gecached antwoord zou een
+  allang-toegepaste of nog-niet-klare week-review kunnen tonen. Het
+  week-overzicht blijft dus online-only — een bewuste, incidentele actie,
+  geen "in de sportschool"-scenario.
+- **Observeerbare wachtrijstatus i.p.v. handmatig pollen**: `offlineQueue.ts`
+  kreeg een minimale pub/sub (`subscribeToQueue`) die na elke `enqueue` en
+  elke geslaagde/mislukte sync-stap de nieuwe wachtrijlengte doorgeeft. De
+  nieuwe hook `useSyncStatus` (combineert dit met `NetInfo.useNetInfo()`)
+  vervangt de eerdere handmatige `getPendingCount()`-aanroepen na elke
+  set/sessie — die `onLogged`-callback-doorgeefketen kon daardoor
+  verdwijnen uit `StrengthLogger`/`CardioLogger` in plaats van ernaast te
+  blijven bestaan.
+- **`SyncStatusBadge`** (`src/components/`, eerste losstaande component —
+  voorheen stond alle UI inline per scherm): toont "Offline" (rood) als
+  `NetInfo` geen verbinding meldt, anders "N niet gesynchroniseerd" (neutraal)
+  zolang de wachtrij niet leeg is, anders een rustige "Gesynchroniseerd"
+  (groen). Zichtbaar op zowel het workout-scherm als "Vandaag".
+- **Testscenario's niet end-to-end uitvoerbaar in deze omgeving**: er is geen
+  live Supabase-project gekoppeld en geen echt toestel beschikbaar, dus de
+  drie scenario's uit de opdracht (vliegtuigstand + volledige training
+  invoeren, bereik verliezen/terugkrijgen halverwege, volledig offline
+  openen) zijn geverifieerd via codereview en een browseromgeving
+  (Playwright `context.set_offline`) i.p.v. een echte device-test. Dat laat
+  zien dat de app niet crasht en bruikbaar blijft zodra de verbinding
+  wegvalt (het scenario dat er in de praktijk toe doet — de JS draait al,
+  alleen netwerkcalls beginnen te falen), maar bevestigt niet dat er
+  daadwerkelijk data in Supabase terechtkomt na reconnect. Dat laatste stuk
+  (de sync-wachtrij zelf) was al in een eerdere sessie gebouwd en
+  gedocumenteerd; deze sessie voegt de leeskant toe die er nog aan ontbrak.
 
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
@@ -440,6 +498,19 @@ Nog open voor Fase 2:
   maar het workout-scherm leest die vlag nog niet uit om bijvoorbeeld het
   kracht-advies automatisch te dempen tijdens een deload-week — dat advies
   komt nu alleen uit `getStrengthAdvice`'s eigen sessie-op-sessie logica.
+- **Offline-scenario's verdienen een echte device-test**: deze sessie heeft
+  de leescache gebouwd en met codereview + browser-simulatie geverifieerd,
+  maar niet met een echte Supabase-backend en een echt toestel in
+  vliegtuigstand. Vóór een release zou iemand de drie scenario's uit de
+  opdracht letterlijk moeten doorlopen (vliegtuigstand aan → training
+  invoeren → verbinding terug → data staat in Supabase; halverwege bereik
+  verliezen/terugkrijgen → geen dubbele/verloren sets; volledig offline
+  openen → vorige waarden en advies zichtbaar).
+- **Onboarding en week-review blijven online-only**: `saveGeneratedProgram`
+  (intake) en `applyWeekReview` (aanpassingen bevestigen) gaan niet door de
+  offline-wachtrij. Bewuste afbakening — dit zijn incidentele acties die
+  typisch niet midden in een trainingssessie in de sportschool gebeuren,
+  in tegenstelling tot het loggen van sets/cardio.
 
 ## Niet gebouwd (bewust, voor latere fases)
 
@@ -465,12 +536,16 @@ app/                        Expo Router routes
   week-review.tsx               Week-overzicht: voorgestelde aanpassingen aan-/uitvinken en bevestigen
   adjustment-history.tsx        Uitleg-geschiedenis: alle program_adjustments, per week gegroepeerd
 src/
+  components/
+    SyncStatusBadge.tsx        Offline / N niet gesynchroniseerd / Gesynchroniseerd — workout + Vandaag
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
     auth.tsx                   AuthProvider + useAuth hook
     profile.tsx                ProfileProvider + useProfile hook (profiles-rij van huidige user)
     programs.ts                saveGeneratedProgram / fetchActiveProgram / fetchProgramDayWithExercises
-    offlineQueue.ts             FIFO sync-wachtrij (AsyncStorage) met idempotente upserts, incl. log_cardio
+    offlineQueue.ts             FIFO sync-wachtrij (AsyncStorage), idempotente upserts, subscribeToQueue
+    offlineCache.ts              fetchWithCache() — network-first leescache, fallback bij netwerkfout
+    useSyncStatus.ts             Hook: wachtrijlengte (live) + NetInfo online/offline
     id.ts                       generateId() — client-side UUID's voor offline-veilige writes
     history.ts                  fetchExerciseHistory() + fetchCardioHistory() — gedeeld door advies en historie
     weekReview.ts                fetchWeekReview() / applyWeekReview() — databrug naar @fitness/adaptation-planner

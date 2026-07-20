@@ -14,13 +14,15 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 import { useAuth } from '@/lib/auth';
 import { formatShortDate } from '@/lib/dates';
 import { fetchCardioHistory, fetchExerciseHistory, type CardioHistoryEntry, type HistorySession } from '@/lib/history';
 import { generateId } from '@/lib/id';
-import { enqueue, getPendingCount } from '@/lib/offlineQueue';
+import { enqueue } from '@/lib/offlineQueue';
 import { useProfile } from '@/lib/profile';
 import { fetchProgramDayWithExercises, type ProgramDayForWorkout, type WorkoutExercise } from '@/lib/programs';
+import { useSyncStatus } from '@/lib/useSyncStatus';
 import { colors } from '@/theme/colors';
 
 const RIR_OPTIONS = [0, 1, 2, 3, 4];
@@ -51,7 +53,7 @@ export default function WorkoutScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [exerciseIndex, setExerciseIndex] = useState(0);
-  const [pendingCount, setPendingCount] = useState(0);
+  const syncStatus = useSyncStatus();
 
   useEffect(() => {
     if (!dayId) {
@@ -67,7 +69,13 @@ export default function WorkoutScreen() {
         }
         setDay(result);
       })
-      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Kon workout niet laden.'))
+      .catch((err) =>
+        setLoadError(
+          err instanceof Error
+            ? `${err.message} (nog niet eerder offline geladen, dus zonder verbinding niet beschikbaar)`
+            : 'Kon workout niet laden.',
+        ),
+      )
       .finally(() => setIsLoading(false));
   }, [dayId]);
 
@@ -76,14 +84,10 @@ export default function WorkoutScreen() {
     enqueue({
       type: 'create_workout',
       payload: { workoutId, userId: session.user.id, programDayId: day.id, performedAt: new Date().toISOString() },
-    }).then(() => getPendingCount().then(setPendingCount));
+    });
     // Runs once per screen visit: workoutId, session and day are all stable for the lifetime of this screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day]);
-
-  function refreshPendingCount() {
-    getPendingCount().then(setPendingCount);
-  }
 
   const exercise = day?.exercises[exerciseIndex] ?? null;
 
@@ -127,7 +131,7 @@ export default function WorkoutScreen() {
           <Pressable onPress={() => router.back()}>
             <Text style={styles.closeButton}>Sluiten</Text>
           </Pressable>
-          {pendingCount > 0 && <Text style={styles.pending}>Wachtrij: {pendingCount}</Text>}
+          <SyncStatusBadge status={syncStatus} />
         </View>
 
         <Text style={styles.dayName}>{day.name}</Text>
@@ -150,9 +154,9 @@ export default function WorkoutScreen() {
         </View>
 
         {isCardio ? (
-          <CardioLogger key={exercise.id} exercise={exercise} workoutId={workoutId} goal={goal} onLogged={refreshPendingCount} />
+          <CardioLogger key={exercise.id} exercise={exercise} workoutId={workoutId} goal={goal} />
         ) : (
-          <StrengthLogger key={exercise.id} exercise={exercise} workoutId={workoutId} onLogged={refreshPendingCount} />
+          <StrengthLogger key={exercise.id} exercise={exercise} workoutId={workoutId} />
         )}
       </ScrollView>
 
@@ -189,15 +193,7 @@ interface LoggedSet {
   rir: number;
 }
 
-function StrengthLogger({
-  exercise,
-  workoutId,
-  onLogged,
-}: {
-  exercise: WorkoutExercise;
-  workoutId: string;
-  onLogged: () => void;
-}) {
+function StrengthLogger({ exercise, workoutId }: { exercise: WorkoutExercise; workoutId: string }) {
   const [history, setHistory] = useState<HistorySession[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -247,7 +243,6 @@ function StrengthLogger({
       type: 'log_set',
       payload: { setLogId, workoutId, dayExerciseId: exercise.id, setOrder, weightKg, reps, rir },
     });
-    onLogged();
     setLoggedSets((prev) => [...prev, { id: setLogId, setOrder, weightKg, reps, rir }]);
   }
 
@@ -363,17 +358,7 @@ function StrengthAdviceCard({
 
 // ---------- Cardio ----------
 
-function CardioLogger({
-  exercise,
-  workoutId,
-  goal,
-  onLogged,
-}: {
-  exercise: WorkoutExercise;
-  workoutId: string;
-  goal: Goal;
-  onLogged: () => void;
-}) {
+function CardioLogger({ exercise, workoutId, goal }: { exercise: WorkoutExercise; workoutId: string; goal: Goal }) {
   const [history, setHistory] = useState<CardioHistoryEntry[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -438,7 +423,6 @@ function CardioLogger({
         rounds: typeAdvice.recommendedType === 'interval' ? rounds : undefined,
       },
     });
-    onLogged();
     setIsLogged(true);
   }
 
@@ -572,10 +556,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 15,
     fontWeight: '600',
-  },
-  pending: {
-    color: colors.textSecondary,
-    fontSize: 13,
   },
   dayName: {
     color: colors.textSecondary,

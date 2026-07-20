@@ -45,8 +45,20 @@ async function readQueue(): Promise<QueuedAction[]> {
   return raw ? (JSON.parse(raw) as QueuedAction[]) : [];
 }
 
+type QueueListener = (pendingCount: number) => void;
+const queueListeners = new Set<QueueListener>();
+
+/** Subscribes to pending-count changes (after every enqueue and every synced/failed flush step). Returns an unsubscribe function. */
+export function subscribeToQueue(listener: QueueListener): () => void {
+  queueListeners.add(listener);
+  return () => {
+    queueListeners.delete(listener);
+  };
+}
+
 async function writeQueue(queue: QueuedAction[]): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+  for (const listener of queueListeners) listener(queue.length);
 }
 
 /** Every row uses a client-generated id and `upsert`, so retrying a partially-succeeded action is always safe. */

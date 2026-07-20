@@ -1,4 +1,5 @@
 import type { CardioLog, CardioSessionType } from '@fitness/progression-engine';
+import { fetchWithCache } from './offlineCache';
 import { supabase } from './supabase';
 
 export interface HistorySet {
@@ -15,8 +16,16 @@ export interface HistorySession {
   sets: HistorySet[];
 }
 
-/** Past sessions for a single exercise, oldest first, grouped by workout. RLS scopes this to the owning user. */
+/**
+ * Past sessions for a single exercise, oldest first, grouped by workout. RLS
+ * scopes this to the owning user. Cached so the strength advice (which needs
+ * this history) can still be computed without a connection.
+ */
 export async function fetchExerciseHistory(dayExerciseId: string): Promise<HistorySession[]> {
+  return fetchWithCache(`exercise_history:${dayExerciseId}`, () => fetchExerciseHistoryFromNetwork(dayExerciseId));
+}
+
+async function fetchExerciseHistoryFromNetwork(dayExerciseId: string): Promise<HistorySession[]> {
   const { data: setRows, error: setLogsError } = await supabase
     .from('set_logs')
     .select('workout_id, set_order, weight_kg, reps, rir')
@@ -59,9 +68,14 @@ export interface CardioHistoryEntry extends CardioLog {
  * `CardioLog[]` so it can be passed straight into the progression-engine
  * functions (`computeWeeklyDistribution`, `adviseCardioProgression`).
  * `date` comes from the parent workout's `performed_at` — cardio_logs has no
- * date column of its own, same as set_logs. RLS scopes this to the owning user.
+ * date column of its own, same as set_logs. RLS scopes this to the owning
+ * user. Cached so the cardio advice can still be computed without a connection.
  */
 export async function fetchCardioHistory(dayExerciseId: string): Promise<CardioHistoryEntry[]> {
+  return fetchWithCache(`cardio_history:${dayExerciseId}`, () => fetchCardioHistoryFromNetwork(dayExerciseId));
+}
+
+async function fetchCardioHistoryFromNetwork(dayExerciseId: string): Promise<CardioHistoryEntry[]> {
   const { data: cardioRows, error: cardioError } = await supabase
     .from('cardio_logs')
     .select('id, workout_id, session_type, duration_minutes, rpe, distance_km, avg_heart_rate, rounds')

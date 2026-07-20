@@ -1,4 +1,5 @@
 import type { GeneratedProgram, IntakeAnswers } from '@fitness/program-generator';
+import { fetchWithCache } from './offlineCache';
 import { supabase } from './supabase';
 
 /** Persists an intake + its generated program: profile upsert, then program -> program_days -> day_exercises. */
@@ -100,8 +101,16 @@ export interface ProgramDayForWorkout {
   exercises: WorkoutExercise[];
 }
 
-/** A single program day with its exercises, for the workout-entry screen. RLS scopes this to the owning user. */
+/**
+ * A single program day with its exercises, for the workout-entry screen. RLS
+ * scopes this to the owning user. Cached so a day you've already opened once
+ * can still be loaded — and logged against — without a connection.
+ */
 export async function fetchProgramDayWithExercises(dayId: string): Promise<ProgramDayForWorkout | null> {
+  return fetchWithCache(`program_day:${dayId}`, () => fetchProgramDayWithExercisesFromNetwork(dayId));
+}
+
+async function fetchProgramDayWithExercisesFromNetwork(dayId: string): Promise<ProgramDayForWorkout | null> {
   const { data, error } = await supabase
     .from('program_days')
     .select(
@@ -133,8 +142,16 @@ export async function fetchProgramDayWithExercises(dayId: string): Promise<Progr
   };
 }
 
-/** The most recently started active program for a user, with its days and exercises, or null if none exists yet. */
+/**
+ * The most recently started active program for a user, with its days and
+ * exercises, or null if none exists yet. Cached so "Vandaag" still shows
+ * the program (with a possibly-stale `nextDayOrder`) when opened offline.
+ */
 export async function fetchActiveProgram(userId: string): Promise<ActiveProgram | null> {
+  return fetchWithCache(`active_program:${userId}`, () => fetchActiveProgramFromNetwork(userId));
+}
+
+async function fetchActiveProgramFromNetwork(userId: string): Promise<ActiveProgram | null> {
   const { data: programRow, error: programError } = await supabase
     .from('programs')
     .select('id, name')

@@ -1,14 +1,17 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 import { useAuth } from '@/lib/auth';
 import { fetchActiveProgram, type ActiveProgram } from '@/lib/programs';
+import { useSyncStatus } from '@/lib/useSyncStatus';
 import { colors } from '@/theme/colors';
 import { fetchWeekReview, type WeekReview } from '@/lib/weekReview';
 
 export default function TodayScreen() {
   const { session, signOut } = useAuth();
   const router = useRouter();
+  const syncStatus = useSyncStatus();
   const [program, setProgram] = useState<ActiveProgram | null>(null);
   const [weekReview, setWeekReview] = useState<WeekReview | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -18,18 +21,21 @@ export default function TodayScreen() {
     if (!session) return;
     setIsLoading(true);
     setError(null);
-    try {
-      const [activeProgram, review] = await Promise.all([
-        fetchActiveProgram(session.user.id),
-        fetchWeekReview(session.user.id),
-      ]);
-      setProgram(activeProgram);
-      setWeekReview(review);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Kon je programma niet laden.');
-    } finally {
-      setIsLoading(false);
+    // Independent: fetchActiveProgram can succeed from cache while offline even if
+    // fetchWeekReview (which needs a fresh workout count, so isn't cached) fails —
+    // one shouldn't block the other from showing.
+    const [programResult, reviewResult] = await Promise.allSettled([
+      fetchActiveProgram(session.user.id),
+      fetchWeekReview(session.user.id),
+    ]);
+
+    if (programResult.status === 'fulfilled') {
+      setProgram(programResult.value);
+    } else {
+      setError(programResult.reason instanceof Error ? programResult.reason.message : 'Kon je programma niet laden.');
     }
+    setWeekReview(reviewResult.status === 'fulfilled' ? reviewResult.value : null);
+    setIsLoading(false);
   }, [session]);
 
   // Herlaadt bij elke focus, zodat het net-gelogde workout meteen de volgende dag verschuift.
@@ -43,7 +49,10 @@ export default function TodayScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Vandaag</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>Vandaag</Text>
+        <SyncStatusBadge status={syncStatus} />
+      </View>
       <Text style={styles.body}>Ingelogd als {session?.user.email}</Text>
 
       {isLoading && (
@@ -109,6 +118,11 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingTop: 48,
     gap: 12,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   title: {
     color: colors.textPrimary,
