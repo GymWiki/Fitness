@@ -71,6 +71,18 @@ geslacht, geboortejaar, streefgewicht, live BMI) vastlegt als tijdreeks. Zie
 de aannames-sectie verderop voor de details en open punten (placeholder-
 silhouetten, de gekozen streak-definitie, de scope van schema-bewerken).
 
+**Extra (na Fase 1), stap 6: game-achtige stats bij streeffysiek-keuze.**
+Klein, presentatie-only add-on op de streeffysiek-picker uit stap 5: elke
+kaart toont vijf geanimeerde stat-balken (Kracht, Spiermassa, Uithouding,
+Snelheid, Lenigheid, schaal 1-5) die het trainingsprofiel van dat doel
+tonen — een "character select"-gevoel, geen belofte over het eindresultaat.
+De waarden staan als losse configuratie in `src/lib/physiqueStats.ts`,
+volledig los van de generator/engines/planner. `SelectableCard` kreeg een
+optionele `children`-slot (backwards-compatibel) om de nieuwe
+`StatBars`-component (`src/components/StatBars.tsx`) onder elke kaart te
+tonen; de balken vullen zich met een korte, gestaggerde animatie en tonen
+altijd ook het numerieke label (1-5), niet alleen kleur/lengte.
+
 ## Architectuurkeuzes gemaakt in deze sessie
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,

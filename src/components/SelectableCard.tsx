@@ -10,26 +10,28 @@ interface SelectableCardProps {
   selected: boolean;
   onPress: () => void;
   icon?: ReactNode;
+  /** Optional extra content rendered below the label/description, full card width (e.g. stat bars). */
+  children?: ReactNode;
 }
 
 /** Tappable option card used by every picker screen (onboarding, profile edit). */
-export function SelectableCard({ label, description, selected, onPress, icon }: SelectableCardProps) {
+export function SelectableCard({ label, description, selected, onPress, icon, children }: SelectableCardProps) {
   return (
     <Pressable style={[styles.card, selected && styles.cardSelected]} onPress={onPress}>
-      {icon ? <View style={styles.icon}>{icon}</View> : null}
-      <View style={styles.textColumn}>
-        <Text style={[styles.label, selected && styles.labelSelected]}>{label}</Text>
-        {description ? <Text style={styles.description}>{description}</Text> : null}
+      <View style={styles.headerRow}>
+        {icon ? <View style={styles.icon}>{icon}</View> : null}
+        <View style={styles.textColumn}>
+          <Text style={[styles.label, selected && styles.labelSelected]}>{label}</Text>
+          {description ? <Text style={styles.description}>{description}</Text> : null}
+        </View>
       </View>
+      {children}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderWidth: 1,
@@ -40,6 +42,11 @@ const styles = StyleSheet.create({
   cardSelected: {
     borderColor: colors.accent,
     backgroundColor: colors.accentMuted,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
   icon: {
     width: 56,

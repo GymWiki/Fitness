@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { ProgressDots } from '@/components/ProgressDots';
+import { StatBars } from '@/components/StatBars';
 import { PhysiqueSilhouette } from '@/components/icons';
 import { SelectableCard } from '@/components/SelectableCard';
 import { useAuth } from '@/lib/auth';
@@ -12,6 +13,7 @@ import { BMI_CATEGORY_LABELS, BMI_CAVEAT, bmiCategory, calculateBmi } from '@/li
 import type { Gender } from '@/lib/profile';
 import { useProfile } from '@/lib/profile';
 import { PHYSIQUE_OPTIONS, goalForPhysique, type Physique } from '@/lib/physique';
+import { PHYSIQUE_STATS } from '@/lib/physiqueStats';
 import { saveGeneratedProgram } from '@/lib/programs';
 import { saveMeasurement } from '@/lib/measurements';
 import { colors } from '@/theme/colors';
@@ -152,8 +154,13 @@ export default function IntakeScreen() {
               selected={physique === option.value}
               onPress={() => setPhysique(option.value)}
               icon={<PhysiqueSilhouette color={physique === option.value ? colors.accent : colors.textSecondary} variant={PHYSIQUE_ICON_VARIANT[option.value]} />}
-            />
+            >
+              <StatBars stats={PHYSIQUE_STATS[option.value]} selected={physique === option.value} />
+            </SelectableCard>
           ))}
+          <Text style={styles.statsDisclaimer}>
+            De balken tonen waar het schema op traint, niet een belofte over hoe je eruit komt te zien.
+          </Text>
         </View>
       )}
 
@@ -359,6 +366,12 @@ const styles = StyleSheet.create({
   body: {
     ...typography.bodySecondary,
     marginBottom: spacing.lg,
+  },
+  statsDisclaimer: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: spacing.xs,
   },
   fieldLabel: {
     ...typography.label,
