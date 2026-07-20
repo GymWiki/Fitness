@@ -9,7 +9,7 @@ gaat. Daarom is de bouwvolgorde bewust: eerst de progressie-engines (het
 
 ## Stappen en status
 
-1. **Projectsetup: Expo + TypeScript + Supabase, auth (e-mail + magic link)** — ✅ gebouwd
+1. **Projectsetup: Expo + TypeScript + Supabase, auth (e-mail + wachtwoord)** — ✅ gebouwd
 2. **Progressie-engines als pure functies met uitgebreide unit tests** — ✅ gebouwd
 3. **Intake-flow + generator met 2 templates (full body 3×, upper/lower 4×)** — ✅ gebouwd
 4. **Workout-invoerscherm (sportschool-geoptimaliseerd, offline queue)** — ✅ gebouwd
@@ -32,10 +32,16 @@ sessie erna. Deze sessie voegde stap 5 en 6 toe.
 - **Expo Router (v6) met `Stack.Protected`** voor de auth-gate: `(auth)` en
   `(tabs)` zijn route-groepen, en de root layout schakelt puur op basis van
   `session` uit `AuthProvider`. Geen handmatige navigatie-redirects nodig.
-- **Supabase Auth via magic link (`signInWithOtp`)**: geen wachtwoorden.
-  Deep-linking terug naar de app via `expo-linking` (`adaptivefitness://auth/callback`),
-  met een globale listener die zowel het PKCE `code`-flow (web) als het
-  impliciete token-fragment (native) afhandelt.
+- **Supabase Auth via e-mail + wachtwoord** (`signInWithPassword` /
+  `signUp`): oorspronkelijk gebouwd met magic links, later in Fase 1 omgezet
+  naar wachtwoord-auth op verzoek. `app/(auth)/index.tsx` is nu één scherm met
+  een login/registreren-toggle in plaats van een aparte "check je e-mail"-
+  stap; er is geen deep-linking of redirect-callback meer nodig, dus
+  `expo-linking` en `app/(auth)/callback.tsx` zijn verwijderd. **Vereist dat
+  "Confirm email" uitstaat** in het Supabase-project (Authentication →
+  Providers → Email) — anders geeft `signUp` geen sessie terug en blijft de
+  gebruiker na registreren op het inlogscherm hangen zonder duidelijke
+  foutmelding waarom.
 - **Donker thema als default** (`userInterfaceStyle: dark`, `src/theme/colors.ts`),
   conform de eis dat dit een sportschool-app is.
 - **Supabase migrations**: `supabase/migrations/0001_init.sql` bevat het volledige
@@ -212,8 +218,7 @@ meertaligheid — zoals in de opdracht vermeld, hier niet aangeraakt.
 app/                        Expo Router routes
   _layout.tsx                Root layout: Auth-/ProfileProvider + 3-weg Stack.Protected gate
   (auth)/
-    index.tsx                 Login (e-mail + magic link)
-    callback.tsx               Landing spot voor de magic-link redirect
+    index.tsx                 Login/registreren (e-mail + wachtwoord, één scherm met toggle)
   (onboarding)/
     index.tsx                  Intake-wizard: doel, ervaring, dagen/week, materiaal, review
   (tabs)/

@@ -13,52 +13,47 @@ import { useAuth } from '@/lib/auth';
 import { colors } from '@/theme/colors';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MIN_PASSWORD_LENGTH = 6;
+
+type Mode = 'login' | 'signup';
 
 export default function LoginScreen() {
-  const { signInWithMagicLink } = useAuth();
+  const { signInWithPassword, signUpWithPassword } = useAuth();
+  const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
-  const [isSending, setIsSending] = useState(false);
+  const [password, setPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sentTo, setSentTo] = useState<string | null>(null);
 
   const isValidEmail = EMAIL_PATTERN.test(email.trim());
+  const isValidPassword = password.length >= MIN_PASSWORD_LENGTH;
+  const canSubmit = isValidEmail && isValidPassword && !isSubmitting;
 
-  async function handleSendLink() {
-    if (!isValidEmail || isSending) return;
-    setIsSending(true);
+  async function handleSubmit() {
+    if (!canSubmit) return;
+    setIsSubmitting(true);
     setError(null);
-    const { error: signInError } = await signInWithMagicLink(email.trim());
-    setIsSending(false);
-    if (signInError) {
-      setError(signInError);
-      return;
+    const submit = mode === 'login' ? signInWithPassword : signUpWithPassword;
+    const { error: submitError } = await submit(email.trim(), password);
+    setIsSubmitting(false);
+    if (submitError) {
+      setError(submitError);
     }
-    setSentTo(email.trim());
+    // On success there's nothing left to do here: onAuthStateChange in AuthProvider
+    // picks up the new session and the root layout's Stack.Protected gate swaps screens.
   }
 
-  if (sentTo) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Check je e-mail</Text>
-        <Text style={styles.body}>
-          We hebben een inloglink gestuurd naar {'\n'}
-          <Text style={styles.emphasis}>{sentTo}</Text>.{'\n\n'}
-          Open de link op dit toestel om in te loggen.
-        </Text>
-        <Pressable style={styles.secondaryButton} onPress={() => setSentTo(null)}>
-          <Text style={styles.secondaryButtonText}>Ander e-mailadres gebruiken</Text>
-        </Pressable>
-      </View>
-    );
+  function toggleMode() {
+    setMode((current) => (current === 'login' ? 'signup' : 'login'));
+    setError(null);
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Text style={styles.title}>Adaptive Fitness</Text>
-      <Text style={styles.body}>Log in met een magische link. Geen wachtwoord nodig.</Text>
+      <Text style={styles.body}>
+        {mode === 'login' ? 'Log in met je e-mail en wachtwoord.' : 'Maak een account aan met e-mail en wachtwoord.'}
+      </Text>
 
       <TextInput
         style={styles.input}
@@ -70,21 +65,38 @@ export default function LoginScreen() {
         textContentType="emailAddress"
         value={email}
         onChangeText={setEmail}
-        onSubmitEditing={handleSendLink}
       />
+
+      <TextInput
+        style={styles.input}
+        placeholder="Wachtwoord"
+        placeholderTextColor={colors.textSecondary}
+        autoCapitalize="none"
+        autoCorrect={false}
+        secureTextEntry
+        textContentType={mode === 'login' ? 'password' : 'newPassword'}
+        value={password}
+        onChangeText={setPassword}
+        onSubmitEditing={handleSubmit}
+      />
+      {mode === 'signup' && password.length > 0 && !isValidPassword && (
+        <Text style={styles.hint}>Minimaal {MIN_PASSWORD_LENGTH} tekens.</Text>
+      )}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <Pressable
-        style={[styles.primaryButton, !isValidEmail && styles.primaryButtonDisabled]}
-        disabled={!isValidEmail || isSending}
-        onPress={handleSendLink}
-      >
-        {isSending ? (
+      <Pressable style={[styles.primaryButton, !canSubmit && styles.primaryButtonDisabled]} disabled={!canSubmit} onPress={handleSubmit}>
+        {isSubmitting ? (
           <ActivityIndicator color={colors.background} />
         ) : (
-          <Text style={styles.primaryButtonText}>Stuur magische link</Text>
+          <Text style={styles.primaryButtonText}>{mode === 'login' ? 'Inloggen' : 'Account aanmaken'}</Text>
         )}
+      </Pressable>
+
+      <Pressable style={styles.secondaryButton} onPress={toggleMode}>
+        <Text style={styles.secondaryButtonText}>
+          {mode === 'login' ? 'Nog geen account? Registreren' : 'Al een account? Inloggen'}
+        </Text>
       </Pressable>
     </KeyboardAvoidingView>
   );
@@ -108,10 +120,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
   },
-  emphasis: {
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
   input: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -121,6 +129,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 16,
     color: colors.textPrimary,
+  },
+  hint: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginTop: -8,
   },
   error: {
     color: colors.danger,
