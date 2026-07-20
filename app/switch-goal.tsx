@@ -5,6 +5,7 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { PhysiquePicker } from '@/components/PhysiquePicker';
 import { useAuth } from '@/lib/auth';
+import { describeError } from '@/lib/describeError';
 import { GOAL_LABELS, goalForPhysique, type Physique } from '@/lib/physique';
 import { useProfile } from '@/lib/profile';
 import { switchGoal } from '@/lib/switchGoal';
@@ -38,7 +39,7 @@ export default function SwitchGoalScreen() {
       await refresh();
       router.back();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Kon niet wisselen van schema.');
+      setError(describeError(err, 'Kon niet wisselen van schema.'));
       setIsSwitching(false);
     }
   }
