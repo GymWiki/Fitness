@@ -117,9 +117,27 @@ live database toepast** (geen GitHub Action, geen Vercel-hook, geen
 sessies alleen als bestand toegevoegd. Als die niet handmatig (`supabase
 db push` of via de SQL-editor) zijn uitgevoerd, mist `profiles` de kolom
 `target_physique` die `switchGoal` via `updateProfile` nodig heeft, en
-faalt de wissel gegarandeerd. **Dit is niet zelf geverifieerd/opgelost** —
-vereist bevestiging van de gebruiker of toegang tot het juiste
-Supabase-project. Wel opgelost: de foutmelding was niet nutteloos generiek
+faalt de wissel gegarandeerd. **Bevestigd en opgelost** nadat de gebruiker
+het echte Supabase-project (`Fitness`, project-ref `xafjhpztfbyhozyruarh`)
+aan deze sessie koppelde: `list_tables` liet inderdaad zien dat migratie
+0001 en (deels) 0002 handmatig waren toegepast, maar 0003 niet —
+`profiles.target_physique` en `body_measurements` bestonden niet.
+`0003_physique_and_measurements.sql` is via `apply_migration` alsnog
+toegepast; het schema komt nu exact overeen met de repo. Neveneffect van
+de bug zichtbaar in de data: omdat `switchGoal` faalt ná het archiveren
+van het oude programma maar vóór het bijwerken van `profiles`, stonden er
+2 wees-archiefprogramma's (van mislukte pogingen) en een verouderd
+`profiles.goal = 'mixed'` terwijl het echt actieve programma al
+`hypertrophy` was — hersteld met een gerichte `update profiles set goal =
+'hypertrophy', target_physique = 'muscular_athletic'` voor die ene
+gebruiker (afgeleid uit het reeds actieve programma, niet gegokt: de
+streeffysiek→doel-mapping is een bijectie). De archiefprogramma's zelf
+zijn niet verwijderd — dat past bij het "nooit verwijderen, alleen
+archiveren"-ontwerp en ze zijn onschuldig zichtbaar in "Eerdere schema's".
+`get_advisors` toont daarna geen nieuwe security-issues (enige advisory:
+"leaked password protection" staat uit — bestond al, losstaand van deze
+bug, niet aangepast zonder expliciete vraag). Wel opgelost, los van de
+migratie: de foutmelding was niet nutteloos generiek
 door een bug (`PostgrestError extends Error` in de geïnstalleerde
 supabase-js-versie, dus `err.message` kwam wél door), maar was wél te
 mager — `hint`/`code` (waar Postgres vaak de letterlijke fix in zet, bv.
@@ -715,15 +733,19 @@ Nog open voor Fase 2:
 
 ### Aannames bij stap 8 (bugfixes)
 
-- **Root cause van bug 1 niet 100% bevestigd, wel met hoge zekerheid
-  vastgesteld**: zonder toegang tot het echte Supabase-project kon de
-  daadwerkelijke Postgres-foutmelding niet ingezien worden. Constraint- en
-  RLS-oorzaken zijn met code-onderzoek uitgesloten; een volgorde-bug in
-  `switchGoal` zelf is uitgesloten met een nieuwe, gemockte test. Wat overblijft
-  (en het enige waarvoor géén automatisering in deze repo bestaat) is dat
-  migraties 0002/0003 niet op de live database zijn toegepast — dit moet
-  de gebruiker bevestigen of zelf oplossen (`supabase db push`), of mij
-  toegang geven tot het juiste project zodat ik het kan verifiëren.
+- **Root cause van bug 1 bevestigd na koppeling van het echte
+  Supabase-project**: `profiles.target_physique` en `body_measurements`
+  bestonden niet — migratie 0003 was nooit toegepast (0001 en 0002 wel,
+  maar handmatig, niet via de CLI-migratietracking: `list_migrations` gaf
+  een lege lijst terwijl het schema wel grotendeels overeenkwam). Opgelost
+  met `apply_migration`; zie de stap-8-samenvatting hierboven voor de
+  volledige diagnose en de datareparatie die daarna nodig was.
+- **Geen geautomatiseerde migratie-pipeline toegevoegd**: dit bugfix-verzoek
+  vroeg om de bug te fixen, niet om een CI/CD-migratiestap te bouwen. Zonder
+  zo'n pipeline kan hetzelfde weer gebeuren bij een volgende migratie — het
+  is de gebruiker aangeraden dit als aparte, expliciete vervolgstap te
+  overwegen (bv. een GitHub Action die `supabase db push` draait bij een
+  merge naar `main`).
 - **`describeError` is bewust alleen toegepast op het schemawissel-pad**,
   niet als repo-brede refactor van elk catch-blok. Andere schermen gebruiken
   nog het oudere `err instanceof Error ? err.message : '...'`-patroon; dat
