@@ -1,33 +1,16 @@
 import type { Session } from '@supabase/supabase-js';
-import * as Linking from 'expo-linking';
 import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 import { supabase } from './supabase';
 
 interface AuthContextValue {
   session: Session | null;
   isLoading: boolean;
-  signInWithMagicLink: (email: string) => Promise<{ error: string | null }>;
+  signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
+  signUpWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-/** Parses a Supabase auth redirect URL and, if it carries tokens or a PKCE code, establishes the session. */
-async function createSessionFromUrl(url: string): Promise<void> {
-  const { queryParams } = Linking.parse(url);
-  const code = typeof queryParams?.code === 'string' ? queryParams.code : undefined;
-  if (code) {
-    await supabase.auth.exchangeCodeForSession(code);
-    return;
-  }
-
-  const hashParams = new URLSearchParams(url.split('#')[1] ?? '');
-  const accessToken = hashParams.get('access_token');
-  const refreshToken = hashParams.get('refresh_token');
-  if (accessToken && refreshToken) {
-    await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-  }
-}
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
@@ -43,17 +26,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setSession(nextSession);
     });
 
-    const linkingSubscription = Linking.addEventListener('url', ({ url }) => {
-      createSessionFromUrl(url);
-    });
-
-    Linking.getInitialURL().then((url) => {
-      if (url) createSessionFromUrl(url);
-    });
-
     return () => {
       authListener.subscription.unsubscribe();
-      linkingSubscription.remove();
     };
   }, []);
 
@@ -61,9 +35,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
     () => ({
       session,
       isLoading,
-      signInWithMagicLink: async (email: string) => {
-        const redirectTo = Linking.createURL('auth/callback');
-        const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo } });
+      signInWithPassword: async (email: string, password: string) => {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        return { error: error?.message ?? null };
+      },
+      // Requires "Confirm email" to be turned off in the Supabase project's Auth settings —
+      // otherwise this returns without a session and the user is stuck until they click a confirmation link.
+      signUpWithPassword: async (email: string, password: string) => {
+        const { error } = await supabase.auth.signUp({ email, password });
         return { error: error?.message ?? null };
       },
       signOut: async () => {

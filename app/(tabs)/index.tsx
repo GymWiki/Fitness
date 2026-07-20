@@ -1,22 +1,111 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 import { useAuth } from '@/lib/auth';
+import { fetchActiveProgram, type ActiveProgram } from '@/lib/programs';
+import { useSyncStatus } from '@/lib/useSyncStatus';
 import { colors } from '@/theme/colors';
+import { fetchWeekReview, type WeekReview } from '@/lib/weekReview';
 
 export default function TodayScreen() {
   const { session, signOut } = useAuth();
+  const router = useRouter();
+  const syncStatus = useSyncStatus();
+  const [program, setProgram] = useState<ActiveProgram | null>(null);
+  const [weekReview, setWeekReview] = useState<WeekReview | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!session) return;
+    setIsLoading(true);
+    setError(null);
+    // Independent: fetchActiveProgram can succeed from cache while offline even if
+    // fetchWeekReview (which needs a fresh workout count, so isn't cached) fails —
+    // one shouldn't block the other from showing.
+    const [programResult, reviewResult] = await Promise.allSettled([
+      fetchActiveProgram(session.user.id),
+      fetchWeekReview(session.user.id),
+    ]);
+
+    if (programResult.status === 'fulfilled') {
+      setProgram(programResult.value);
+    } else {
+      setError(programResult.reason instanceof Error ? programResult.reason.message : 'Kon je programma niet laden.');
+    }
+    setWeekReview(reviewResult.status === 'fulfilled' ? reviewResult.value : null);
+    setIsLoading(false);
+  }, [session]);
+
+  // Herlaadt bij elke focus, zodat het net-gelogde workout meteen de volgende dag verschuift.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
+
+  const todayDay = program?.days.find((day) => day.dayOrder === program.nextDayOrder) ?? null;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Welkom terug</Text>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Vandaag</Text>
+        <SyncStatusBadge status={syncStatus} />
+      </View>
       <Text style={styles.body}>Ingelogd als {session?.user.email}</Text>
-      <Text style={styles.note}>
-        De intake, schemagenerator en workout-invoer komen in de volgende bouwstap. Deze
-        stap toont dat authenticatie werkt.
-      </Text>
+
+      {isLoading && (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator color={colors.accent} />
+        </View>
+      )}
+
+      {!isLoading && error && <Text style={styles.error}>{error}</Text>}
+
+      {!isLoading && !error && weekReview && (
+        <Pressable style={styles.weekReviewBanner} onPress={() => router.push('/week-review')}>
+          <Text style={styles.weekReviewBannerTitle}>Week {weekReview.weekNumber} voltooid</Text>
+          <Text style={styles.weekReviewBannerBody}>
+            {weekReview.adjustments.length > 0
+              ? `${weekReview.adjustments.length} voorgestelde aanpassing${weekReview.adjustments.length === 1 ? '' : 'en'} — bekijk en bevestig`
+              : 'Bekijk je week-overzicht'}
+          </Text>
+        </Pressable>
+      )}
+
+      {!isLoading && !error && program && todayDay && (
+        <View style={styles.card}>
+          <Text style={styles.programName}>{program.name}</Text>
+          <Text style={styles.dayName}>
+            Dag {todayDay.dayOrder}: {todayDay.name}
+          </Text>
+          {todayDay.exercises.map((exercise) => (
+            <View key={exercise.id} style={styles.exerciseRow}>
+              <Text style={styles.exerciseName}>{exercise.exerciseName}</Text>
+              <Text style={styles.exerciseDetail}>
+                {exercise.sets}× {exercise.repRangeMin}-{exercise.repRangeMax} reps · RIR {exercise.targetRIR}
+              </Text>
+            </View>
+          ))}
+          <Pressable style={styles.startButton} onPress={() => router.push(`/workout/${todayDay.id}`)}>
+            <Text style={styles.startButtonText}>Start workout</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {!isLoading && !error && !program && (
+        <Text style={styles.note}>Nog geen actief programma gevonden.</Text>
+      )}
+
+      <Pressable style={styles.historyLink} onPress={() => router.push('/adjustment-history')}>
+        <Text style={styles.historyLinkText}>Aanpassingsgeschiedenis</Text>
+      </Pressable>
+
       <Pressable style={styles.signOutButton} onPress={signOut}>
         <Text style={styles.signOutText}>Uitloggen</Text>
       </Pressable>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -24,18 +113,87 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  content: {
     padding: 24,
+    paddingTop: 48,
     gap: 12,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   title: {
     color: colors.textPrimary,
     fontSize: 24,
     fontWeight: '700',
-    marginTop: 48,
   },
   body: {
     color: colors.textSecondary,
     fontSize: 16,
+  },
+  loadingRow: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  error: {
+    color: colors.danger,
+    fontSize: 14,
+    marginTop: 12,
+  },
+  weekReviewBanner: {
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 12,
+  },
+  weekReviewBannerTitle: {
+    color: colors.background,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  weekReviewBannerBody: {
+    color: colors.background,
+    fontSize: 14,
+    marginTop: 2,
+  },
+  card: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 12,
+    gap: 4,
+  },
+  programName: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  dayName: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  exerciseRow: {
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  exerciseName: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  exerciseDetail: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginTop: 2,
   },
   note: {
     color: colors.textSecondary,
@@ -43,8 +201,29 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 12,
   },
+  startButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  startButtonText: {
+    color: colors.background,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  historyLink: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginTop: 24,
+  },
+  historyLinkText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: '600',
+  },
   signOutButton: {
-    marginTop: 'auto',
     marginBottom: 24,
     alignItems: 'center',
     paddingVertical: 14,

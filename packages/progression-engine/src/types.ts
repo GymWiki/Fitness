@@ -62,19 +62,22 @@ export interface CardioLog {
   rounds?: number;
 }
 
-export interface CardioDistributionAdvice {
-  recommendedType: CardioSessionType;
-  /** Share of logged cardio time spent in zone 2, 0-1. */
-  zone2Ratio: number;
-  targetZone2Ratio: number;
-  explanation: string;
+export interface WeeklyCardioDistribution {
+  /** Size of the trailing window this was computed over. */
+  windowDays: number;
+  lowMinutes: number;
+  highMinutes: number;
+  totalMinutes: number;
+  /** Share of total cardio time that was intensive (interval) within the window, 0-100. */
+  intensePercent: number;
 }
 
-export interface Zone2ProgressionConfig {
-  /** 1-based week number within the current mesocycle. */
-  weekInCycle: number;
-  /** Length of the load/deload cycle in weeks, e.g. 3 weeks up + 1 deload. */
-  cycleLengthWeeks: number;
+export interface CardioTypeAdvice {
+  recommendedType: CardioSessionType;
+  distribution: WeeklyCardioDistribution;
+  /** Goal-dependent target share of zone2 time within the window, 0-100. */
+  targetZone2Percent: number;
+  explanation: string;
 }
 
 export type CardioProgressionAction = 'increase_duration' | 'maintain' | 'deload';
@@ -84,11 +87,6 @@ export interface Zone2Advice {
   durationMinutes: number;
   durationChangePercent: number;
   explanation: string;
-}
-
-export interface IntervalProgressionConfig {
-  /** Ceiling on rounds before tempo is allowed to increase instead. */
-  maxRoundsBeforeTempoIncrease: number;
 }
 
 export type IntervalProgressionAction = 'increase_rounds' | 'increase_tempo' | 'maintain';
