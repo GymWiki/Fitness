@@ -15,6 +15,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@/lib/auth';
+import { formatShortDate } from '@/lib/dates';
 import { fetchCardioHistory, fetchExerciseHistory, type CardioHistoryEntry, type HistorySession } from '@/lib/history';
 import { generateId } from '@/lib/id';
 import { enqueue, getPendingCount } from '@/lib/offlineQueue';
@@ -256,7 +257,12 @@ function StrengthLogger({
         Doel: {exercise.sets}× {exercise.repRangeMin}-{exercise.repRangeMax} reps, RIR {exercise.targetRIR}
       </Text>
 
-      <StrengthAdviceCard isLoading={isHistoryLoading} error={historyError} hasHistory={history.length > 0} advice={advice} />
+      <StrengthAdviceCard
+        isLoading={isHistoryLoading}
+        error={historyError}
+        lastSession={history.length > 0 ? history[history.length - 1]! : null}
+        advice={advice}
+      />
 
       <Stepper label="Gewicht (kg)" value={weightKg} step={exercise.weightIncrementKg} min={0} onChange={setWeightKg} />
       <Stepper label="Herhalingen" value={reps} step={1} min={0} onChange={setReps} />
@@ -290,14 +296,16 @@ function StrengthLogger({
 function StrengthAdviceCard({
   isLoading,
   error,
-  hasHistory,
+  lastSession,
   advice,
 }: {
   isLoading: boolean;
   error: string | null;
-  hasHistory: boolean;
+  lastSession: HistorySession | null;
   advice: StrengthAdvice | null;
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   if (isLoading) {
     return (
       <View style={styles.adviceCard}>
@@ -314,7 +322,7 @@ function StrengthAdviceCard({
     );
   }
 
-  if (!hasHistory || !advice) {
+  if (!lastSession || !advice) {
     return (
       <View style={styles.adviceCard}>
         <Text style={styles.body}>Nog geen historie voor deze oefening. Kies zelf een startgewicht voor de eerste set.</Text>
@@ -339,6 +347,16 @@ function StrengthAdviceCard({
         <Text style={styles.adviceWeight}>{advice.weightKg} kg</Text>
       </View>
       <Text style={styles.adviceExplanation}>{advice.explanation}</Text>
+
+      <Pressable onPress={() => setIsExpanded((current) => !current)}>
+        <Text style={styles.whyToggle}>{isExpanded ? 'Verberg details' : 'Waarom?'}</Text>
+      </Pressable>
+      {isExpanded && (
+        <Text style={styles.whyDetail}>
+          Vergeleken met je laatste sessie ({formatShortDate(lastSession.performedAt)}):{' '}
+          {lastSession.sets.map((set) => `${set.weightKg} kg × ${set.reps} (RIR ${set.rir})`).join(', ')}.
+        </Text>
+      )}
     </View>
   );
 }
@@ -360,6 +378,7 @@ function CardioLogger({
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [isLogged, setIsLogged] = useState(false);
+  const [isWhyExpanded, setIsWhyExpanded] = useState(false);
 
   const [durationMinutes, setDurationMinutes] = useState(20);
   const [rpe, setRpe] = useState(4);
@@ -440,6 +459,7 @@ function CardioLogger({
   }
 
   const isZone2 = typeAdvice.recommendedType === 'zone2';
+  const distribution = typeAdvice.distribution;
 
   return (
     <>
@@ -447,6 +467,16 @@ function CardioLogger({
         <Text style={styles.adviceCardTitle}>Vandaag: {isZone2 ? 'Zone 2' : 'Interval'}</Text>
         <Text style={styles.adviceExplanation}>{typeAdvice.explanation}</Text>
         <Text style={[styles.adviceExplanation, styles.adviceExplanationSpaced]}>{progressionAdvice.explanation}</Text>
+
+        <Pressable onPress={() => setIsWhyExpanded((current) => !current)}>
+          <Text style={styles.whyToggle}>{isWhyExpanded ? 'Verberg details' : 'Waarom?'}</Text>
+        </Pressable>
+        {isWhyExpanded && (
+          <Text style={styles.whyDetail}>
+            Afgelopen {distribution.windowDays} dagen: {distribution.lowMinutes} min zone 2, {distribution.highMinutes} min interval
+            ({distribution.intensePercent}% intensief).
+          </Text>
+        )}
       </View>
 
       {isLogged ? (
@@ -630,6 +660,18 @@ const styles = StyleSheet.create({
   },
   adviceExplanationSpaced: {
     marginTop: 8,
+  },
+  whyToggle: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 10,
+  },
+  whyDetail: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 6,
   },
   error: {
     color: colors.danger,

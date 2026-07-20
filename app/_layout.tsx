@@ -34,6 +34,7 @@ function RootNavigator() {
         <Stack.Screen name="workout/[dayId]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="history/[dayExerciseId]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="week-review" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="adjustment-history" options={{ presentation: 'modal' }} />
       </Stack.Protected>
     </Stack>
   );

@@ -87,13 +87,13 @@ export interface Adjustment {
   dayExerciseId?: string;
   previousValue?: number;
   newValue?: number;
-  /** User-facing explanation (Dutch), always present. */
-  reason: string;
+  /** User-facing explanation (Dutch), always present. Same field name as the other engines' advice types. */
+  explanation: string;
 }
 
 export interface DeloadDecision {
   shouldDeload: boolean;
-  reason: string;
+  explanation: string;
 }
 
 // ---------- Session distribution ----------

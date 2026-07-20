@@ -35,7 +35,7 @@ function program(): CurrentProgramState {
 describe('applyAdjustments', () => {
   it('mutates only the targeted exercise for a volume adjustment', () => {
     const next = applyAdjustments(program(), [
-      { type: 'volume_increase', dayExerciseId: 'bench-press', previousValue: 3, newValue: 4, reason: 'test' },
+      { type: 'volume_increase', dayExerciseId: 'bench-press', previousValue: 3, newValue: 4, explanation: 'test' },
     ]);
 
     const bench = next.days.flatMap((d) => d.exercises).find((e) => e.dayExerciseId === 'bench-press')!;
@@ -46,12 +46,12 @@ describe('applyAdjustments', () => {
 
   it('does not mutate the original program (immutability)', () => {
     const original = program();
-    applyAdjustments(original, [{ type: 'volume_increase', dayExerciseId: 'bench-press', newValue: 10, reason: 'test' }]);
+    applyAdjustments(original, [{ type: 'volume_increase', dayExerciseId: 'bench-press', newValue: 10, explanation: 'test' }]);
     expect(original.days[0]!.exercises[0]!.sets).toBe(3);
   });
 
   it('shrinks daysPerWeek and drops the highest-dayOrder day(s), without deleting any exercise data', () => {
-    const next = applyAdjustments(program(), [{ type: 'reduce_days', previousValue: 4, newValue: 3, reason: 'test' }]);
+    const next = applyAdjustments(program(), [{ type: 'reduce_days', previousValue: 4, newValue: 3, explanation: 'test' }]);
 
     expect(next.daysPerWeek).toBe(3);
     expect(next.days).toHaveLength(3);
@@ -60,7 +60,7 @@ describe('applyAdjustments', () => {
   });
 
   it('flags the week as a deload without changing any sets', () => {
-    const next = applyAdjustments(program(), [{ type: 'deload', reason: 'test' }]);
+    const next = applyAdjustments(program(), [{ type: 'deload', explanation: 'test' }]);
     expect(next.isDeloadWeek).toBe(true);
     expect(next.days.flatMap((d) => d.exercises).every((e) => e.sets === 3 || e.sets === 4)).toBe(true);
   });

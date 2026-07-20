@@ -18,7 +18,7 @@ function weeksSinceLastDeload(sortedWeeks: RecentWeekSummary[]): number {
  */
 export function shouldDeload(recentWeeks: RecentWeekSummary[], cycleLengthWeeks = DEFAULT_CYCLE_LENGTH_WEEKS): DeloadDecision {
   if (recentWeeks.length === 0) {
-    return { shouldDeload: false, reason: 'Nog geen weekgeschiedenis om op te baseren.' };
+    return { shouldDeload: false, explanation: 'Nog geen weekgeschiedenis om op te baseren.' };
   }
 
   const sortedWeeks = [...recentWeeks].sort((a, b) => a.weekNumber - b.weekNumber);
@@ -27,7 +27,7 @@ export function shouldDeload(recentWeeks: RecentWeekSummary[], cycleLengthWeeks 
   if (weeksSince >= cycleLengthWeeks) {
     return {
       shouldDeload: true,
-      reason: `${weeksSince} weken sinds de laatste deload (streefcyclus: elke ${cycleLengthWeeks} weken).`,
+      explanation: `${weeksSince} weken sinds de laatste deload (streefcyclus: elke ${cycleLengthWeeks} weken).`,
     };
   }
 
@@ -35,12 +35,12 @@ export function shouldDeload(recentWeeks: RecentWeekSummary[], cycleLengthWeeks 
   if (lastTwoWeeks.length === 2 && lastTwoWeeks.every((week) => week.hasRecoverySignal)) {
     return {
       shouldDeload: true,
-      reason: 'Twee weken op rij herstelsignalen (reps onder de streef-range), dus eerder een deload dan de geplande cyclus.',
+      explanation: 'Twee weken op rij herstelsignalen (reps onder de streef-range), dus eerder een deload dan de geplande cyclus.',
     };
   }
 
   return {
     shouldDeload: false,
-    reason: `Nog ${cycleLengthWeeks - weeksSince} weken tot de volgende geplande deload, geen vroege herstelsignalen.`,
+    explanation: `Nog ${cycleLengthWeeks - weeksSince} weken tot de volgende geplande deload, geen vroege herstelsignalen.`,
   };
 }

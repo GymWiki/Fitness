@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle, Line as SvgLine, Polyline } from 'react-native-svg';
+import { formatShortDate } from '@/lib/dates';
 import { fetchCardioHistory, fetchExerciseHistory, type CardioHistoryEntry, type HistorySession } from '@/lib/history';
 import { colors } from '@/theme/colors';
 
@@ -9,13 +10,6 @@ const CARDIO_TYPE_LABELS: Record<CardioHistoryEntry['type'], string> = {
   zone2: 'Zone 2',
   interval: 'Interval',
 };
-
-function formatShortDate(iso: string): string {
-  const date = new Date(iso);
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  return `${day}-${month}`;
-}
 
 /** Heaviest set of a session — the number that matters for "did I get stronger", ignoring lighter back-off sets. */
 function topSetWeight(session: HistorySession): number {

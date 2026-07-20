@@ -1,25 +1,15 @@
-import type { Adjustment, AdjustmentType } from '@fitness/adaptation-planner';
+import type { Adjustment } from '@fitness/adaptation-planner';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { adjustmentTitle } from '@/lib/adjustmentLabels';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/theme/colors';
 import { applyWeekReview, fetchWeekReview, type WeekReview } from '@/lib/weekReview';
 
-const ADJUSTMENT_LABELS: Record<AdjustmentType, string> = {
-  volume_increase: 'Volume omhoog',
-  volume_decrease: 'Volume omlaag',
-  deload: 'Deload-week',
-  reduce_days: 'Schema verkleinen',
-};
-
-function adjustmentTitle(adjustment: Adjustment, review: WeekReview): string {
-  const label = ADJUSTMENT_LABELS[adjustment.type];
-  if (adjustment.dayExerciseId) {
-    const exerciseName = review.exerciseNamesById.get(adjustment.dayExerciseId);
-    return exerciseName ? `${label}: ${exerciseName}` : label;
-  }
-  return label;
+function titleFor(adjustment: Adjustment, review: WeekReview): string {
+  const exerciseName = adjustment.dayExerciseId ? review.exerciseNamesById.get(adjustment.dayExerciseId) : undefined;
+  return adjustmentTitle(adjustment.type, exerciseName);
 }
 
 export default function WeekReviewScreen() {
@@ -106,6 +96,9 @@ export default function WeekReviewScreen() {
         </View>
 
         <Text style={styles.title}>Week {review.weekNumber} voltooid</Text>
+        <Pressable onPress={() => router.push('/adjustment-history')}>
+          <Text style={styles.historyLink}>Bekijk eerdere aanpassingen</Text>
+        </Pressable>
 
         {review.adjustments.length === 0 ? (
           <Text style={styles.body}>Geen aanpassingen nodig deze week — alles binnen het schema. Ga zo door!</Text>
@@ -123,7 +116,7 @@ export default function WeekReviewScreen() {
                   onPress={() => toggle(index)}
                 >
                   <View style={styles.cardHeaderRow}>
-                    <Text style={styles.cardTitle}>{adjustmentTitle(adjustment, review)}</Text>
+                    <Text style={styles.cardTitle}>{titleFor(adjustment, review)}</Text>
                     <Text style={[styles.cardCheck, isSelected && styles.cardCheckSelected]}>
                       {isSelected ? '✓' : ''}
                     </Text>
@@ -133,7 +126,7 @@ export default function WeekReviewScreen() {
                       {adjustment.previousValue} → {adjustment.newValue}
                     </Text>
                   )}
-                  <Text style={styles.cardReason}>{adjustment.reason}</Text>
+                  <Text style={styles.cardReason}>{adjustment.explanation}</Text>
                 </Pressable>
               );
             })}
@@ -191,6 +184,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 14,
     lineHeight: 20,
+    marginBottom: 8,
+  },
+  historyLink: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: '600',
     marginBottom: 8,
   },
   body: {

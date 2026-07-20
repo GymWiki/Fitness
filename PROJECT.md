@@ -38,6 +38,13 @@ aannames-sectie verderop; het belangrijkste open punt is dat `distributeSessions
 niet aan een echt weekdag-veld gekoppeld kan worden — dat veld bestaat nog
 niet in het schema (zie ook het cardio-in-generator open punt hierboven).
 
+**Extra (na Fase 1), stap 3: uitleg bij elk advies.** Geen nieuwe
+trainingslogica — de kracht-, cardio- en planner-engines gaven al overal een
+reden-string terug. Deze stap maakt dat consistent (één veldnaam,
+`explanation`, in plaats van een mix van `explanation` en `reason`), voegt
+een "Waarom?"-uitklap toe op de adviesschermen, en bouwt een nieuw
+uitleg-geschiedenisscherm dat rechtstreeks uit `program_adjustments` leest.
+
 ## Architectuurkeuzes gemaakt in deze sessie
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
@@ -232,6 +239,31 @@ niet in het schema (zie ook het cardio-in-generator open punt hierboven).
   (standaard allemaal aan) met reden en oude→nieuwe waarde, en een
   "Bevestigen"-knop — nooit stilletjes toegepast. Bij nul aanpassingen toont
   het scherm een geruststellende "ga zo door"-melding i.p.v. een lege lijst.
+- **`explanation` als één veldnaam over alle drie de engines**: `StrengthAdvice`,
+  `CardioTypeAdvice`, `Zone2Advice` en `IntervalAdvice` gebruikten dit al;
+  `DeloadDecision.reason` en `Adjustment.reason` (beide in
+  `@fitness/adaptation-planner`) zijn hernoemd naar `.explanation` zodat elke
+  advies-dragende waarde in de hele codebase hetzelfde veld gebruikt. Puur een
+  hernoeming (geen gedragswijziging); de `program_adjustments.reason`
+  kolomnaam in de database is bewust ongemoeid gelaten — de datalaag
+  (`weekReview.ts`, `adjustmentHistory.ts`) doet toch al de snake_case-naar-
+  camelCase-vertaling voor elk veld.
+- **"Waarom?"-uitklap toont al-berekende data, geen nieuwe berekening**: het
+  kracht-adviesscherm toont op uitklap de laatst vergeleken sessie (datum +
+  gelogde sets), het cardio-adviesscherm toont de weekverdeling in cijfers
+  (minuten laag/hoog, %intensief). Beide komen uit state die al in de
+  component aanwezig was voor de uitleg-zin zelf; er wordt niets extra's
+  opgevraagd of berekend.
+- **`app/adjustment-history.tsx`**: leest alle `program_adjustments` van het
+  actieve programma (nieuwste eerst, gegroepeerd per weeknummer), elk met
+  type, oude→nieuwe waarde en de reden-tekst. Gebruikt dezelfde
+  `adjustmentTitle`-labels als het week-overzicht (nu gedeeld via
+  `src/lib/adjustmentLabels.ts` i.p.v. gedupliceerd). Bereikbaar via een
+  vaste link op "Vandaag" én vanuit het week-overzichtscherm — dus ook
+  zichtbaar in weken zonder pending review.
+- **`formatShortDate` samengevoegd**: stond drie keer bijna identiek
+  gedupliceerd (workout-, historie- en nu ook het geschiedenisscherm);
+  verhuisd naar `src/lib/dates.ts`.
 
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
@@ -431,6 +463,7 @@ app/                        Expo Router routes
   history/
     [dayExerciseId].tsx         Historie per oefening (kracht of cardio): lijngrafiek(en) + lijst per sessie
   week-review.tsx               Week-overzicht: voorgestelde aanpassingen aan-/uitvinken en bevestigen
+  adjustment-history.tsx        Uitleg-geschiedenis: alle program_adjustments, per week gegroepeerd
 src/
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
@@ -441,6 +474,9 @@ src/
     id.ts                       generateId() — client-side UUID's voor offline-veilige writes
     history.ts                  fetchExerciseHistory() + fetchCardioHistory() — gedeeld door advies en historie
     weekReview.ts                fetchWeekReview() / applyWeekReview() — databrug naar @fitness/adaptation-planner
+    adjustmentHistory.ts         fetchAdjustmentHistory() — alle program_adjustments van het actieve programma
+    adjustmentLabels.ts          Gedeelde Nederlandse labels per AdjustmentType (week-review + geschiedenis)
+    dates.ts                     formatShortDate() — gedeeld door workout-, historie- en geschiedenisscherm
   theme/
     colors.ts                  Donker kleurenpalet
 packages/

@@ -36,7 +36,7 @@ function evaluateAdherence(weekLogs: WeekLog, program: CurrentProgramState): Adj
     type: 'reduce_days',
     previousValue: program.daysPerWeek,
     newValue: newDaysPerWeek,
-    reason: `${skippedDays} van de ${totalDays} geplande sessies deze week overgeslagen. Een kleiner schema dat wel gedaan wordt werkt beter dan vasthouden aan een schema dat blijft liggen: ${program.daysPerWeek} -> ${newDaysPerWeek} dagen per week.`,
+    explanation: `${skippedDays} van de ${totalDays} geplande sessies deze week overgeslagen. Een kleiner schema dat wel gedaan wordt werkt beter dan vasthouden aan een schema dat blijft liggen: ${program.daysPerWeek} -> ${newDaysPerWeek} dagen per week.`,
   };
 }
 
@@ -58,7 +58,7 @@ function evaluateMuscleGroupVolume(weekLogs: WeekLog, goal: Goal): Adjustment[] 
         dayExerciseId: strugglingExercise.dayExerciseId,
         previousValue: strugglingExercise.currentSets,
         newValue: newSets,
-        reason: `Reps vielen deze week onder de streef-range bij ${muscleGroup} — een teken dat het volume te hoog is om van te herstellen. Sets terug van ${strugglingExercise.currentSets} naar ${newSets}.`,
+        explanation: `Reps vielen deze week onder de streef-range bij ${muscleGroup} — een teken dat het volume te hoog is om van te herstellen. Sets terug van ${strugglingExercise.currentSets} naar ${newSets}.`,
       });
       continue;
     }
@@ -73,7 +73,7 @@ function evaluateMuscleGroupVolume(weekLogs: WeekLog, goal: Goal): Adjustment[] 
         dayExerciseId: target.dayExerciseId,
         previousValue: target.currentSets,
         newValue: newSets,
-        reason: `Alle sets voor ${muscleGroup} raakten deze week de bovenkant van de rep-range op de streef-RIR. Volume kan omhoog: ${target.currentSets} -> ${newSets} sets.`,
+        explanation: `Alle sets voor ${muscleGroup} raakten deze week de bovenkant van de rep-range op de streef-RIR. Volume kan omhoog: ${target.currentSets} -> ${newSets} sets.`,
       });
     }
   }
@@ -85,7 +85,7 @@ function evaluateDeload(weekLogs: WeekLog, program: CurrentProgramState): Adjust
   const hasRecoverySignal = weekLogs.exercises.some((exercise) => exercise.sessions.some((session) => fellBelowRange(session, exercise)));
   const thisWeekSummary: RecentWeekSummary = { weekNumber: weekLogs.weekNumber, wasDeload: false, hasRecoverySignal };
   const decision = shouldDeload([...program.recentWeeks, thisWeekSummary]);
-  return decision.shouldDeload ? { type: 'deload', reason: decision.reason } : null;
+  return decision.shouldDeload ? { type: 'deload', explanation: decision.explanation } : null;
 }
 
 /**

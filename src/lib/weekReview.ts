@@ -206,7 +206,7 @@ export async function applyWeekReview(review: WeekReview, adjustments: Adjustmen
         adjustment_type: adjustment.type,
         previous_value: adjustment.previousValue ?? null,
         new_value: adjustment.newValue ?? null,
-        reason: adjustment.reason,
+        reason: adjustment.explanation,
         week_number: review.weekNumber,
         is_deload: adjustment.type === 'deload',
       })),

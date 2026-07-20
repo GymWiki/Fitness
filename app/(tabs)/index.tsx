@@ -89,6 +89,10 @@ export default function TodayScreen() {
         <Text style={styles.note}>Nog geen actief programma gevonden.</Text>
       )}
 
+      <Pressable style={styles.historyLink} onPress={() => router.push('/adjustment-history')}>
+        <Text style={styles.historyLinkText}>Aanpassingsgeschiedenis</Text>
+      </Pressable>
+
       <Pressable style={styles.signOutButton} onPress={signOut}>
         <Text style={styles.signOutText}>Uitloggen</Text>
       </Pressable>
@@ -195,8 +199,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  signOutButton: {
+  historyLink: {
+    alignItems: 'center',
+    paddingVertical: 12,
     marginTop: 24,
+  },
+  historyLinkText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  signOutButton: {
     marginBottom: 24,
     alignItems: 'center',
     paddingVertical: 14,

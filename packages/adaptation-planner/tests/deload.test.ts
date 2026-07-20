@@ -16,7 +16,7 @@ describe('shouldDeload', () => {
     const weeks = [week(1), week(2), week(3), week(4), week(5)];
     const decision = shouldDeload(weeks);
     expect(decision.shouldDeload).toBe(true);
-    expect(decision.reason).toContain('5 weken');
+    expect(decision.explanation).toContain('5 weken');
   });
 
   it('does not deload before the cycle is due, with no recovery signals', () => {
@@ -35,7 +35,7 @@ describe('shouldDeload', () => {
     const weeks = [week(1), week(2, { hasRecoverySignal: true }), week(3, { hasRecoverySignal: true })];
     const decision = shouldDeload(weeks);
     expect(decision.shouldDeload).toBe(true);
-    expect(decision.reason).toContain('herstelsignalen');
+    expect(decision.explanation).toContain('herstelsignalen');
   });
 
   it('does not deload early after only a single week of recovery signals', () => {
