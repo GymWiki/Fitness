@@ -299,6 +299,10 @@ export default function ProfileScreen() {
           </>
         )}
 
+        <Pressable style={styles.faqLinkRow} onPress={() => router.push('/faq')}>
+          <Text style={styles.faqLinkText}>Wetenschap — waarom werkt dit zo?</Text>
+        </Pressable>
+
         <View style={styles.signOutButtonWrap}>
           <Button variant="danger" onPress={signOut}>
             Uitloggen
@@ -505,6 +509,16 @@ const styles = StyleSheet.create({
   },
   saveButtonWrap: {
     minWidth: 120,
+  },
+  faqLinkRow: {
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    marginTop: spacing.lg,
+  },
+  faqLinkText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: '600',
   },
   signOutButtonWrap: {
     marginTop: spacing.xxl,
