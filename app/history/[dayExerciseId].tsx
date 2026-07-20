@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { LineChart } from '@/components/LineChart';
+import { useAuth } from '@/lib/auth';
 import { formatShortDate } from '@/lib/dates';
 import { fetchCardioHistory, fetchExerciseHistory, type CardioHistoryEntry, type HistorySession } from '@/lib/history';
 import { colors } from '@/theme/colors';
@@ -86,8 +87,9 @@ function CardioHistory({ history, chartWidth }: { history: CardioHistoryEntry[];
 
 export default function ExerciseHistoryScreen() {
   const params = useLocalSearchParams<{ dayExerciseId: string; exerciseName?: string; kind?: string }>();
+  const { session } = useAuth();
   const dayExerciseId = typeof params.dayExerciseId === 'string' ? params.dayExerciseId : undefined;
-  const exerciseName = typeof params.exerciseName === 'string' ? params.exerciseName : 'Oefening';
+  const exerciseName = typeof params.exerciseName === 'string' ? params.exerciseName : undefined;
   const isCardio = params.kind === 'cardio_duration' || params.kind === 'cardio_interval';
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
@@ -98,16 +100,28 @@ export default function ExerciseHistoryScreen() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!dayExerciseId) {
+    if (isCardio) {
+      if (!dayExerciseId) {
+        setError('Geen oefening opgegeven.');
+        setIsLoading(false);
+        return;
+      }
+      fetchCardioHistory(dayExerciseId)
+        .then(setCardioHistory)
+        .catch((err) => setError(err instanceof Error ? err.message : 'Kon historie niet laden.'))
+        .finally(() => setIsLoading(false));
+      return;
+    }
+    if (!session || !exerciseName) {
       setError('Geen oefening opgegeven.');
       setIsLoading(false);
       return;
     }
-    const fetchHistory = isCardio ? fetchCardioHistory(dayExerciseId).then(setCardioHistory) : fetchExerciseHistory(dayExerciseId).then(setStrengthHistory);
-    fetchHistory
+    fetchExerciseHistory(session.user.id, exerciseName)
+      .then(setStrengthHistory)
       .catch((err) => setError(err instanceof Error ? err.message : 'Kon historie niet laden.'))
       .finally(() => setIsLoading(false));
-  }, [dayExerciseId, isCardio]);
+  }, [dayExerciseId, exerciseName, isCardio, session]);
 
   const chartWidth = Math.min(windowWidth - 80, 480);
   const hasHistory = isCardio ? cardioHistory.length > 0 : strengthHistory.length > 0;
@@ -121,7 +135,7 @@ export default function ExerciseHistoryScreen() {
           </Pressable>
         </View>
 
-        <Text style={styles.title}>{exerciseName}</Text>
+        <Text style={styles.title}>{exerciseName ?? 'Oefening'}</Text>
         <Text style={styles.subtitle}>Historie</Text>
 
         {isLoading && (

@@ -1,35 +1,49 @@
 import type { CardioLog, CardioSessionType } from '@fitness/progression-engine';
+import { groupSetLogsIntoSessions } from './exerciseHistoryMerge';
 import { fetchWithCache } from './offlineCache';
 import { supabase } from './supabase';
 
-export interface HistorySet {
-  setOrder: number;
-  weightKg: number;
-  reps: number;
-  rir: number;
-}
-
-export interface HistorySession {
-  workoutId: string;
-  /** ISO date string, from workouts.performed_at. */
-  performedAt: string;
-  sets: HistorySet[];
-}
+export type { HistorySession, HistorySet } from './exerciseHistoryMerge';
 
 /**
- * Past sessions for a single exercise, oldest first, grouped by workout. RLS
- * scopes this to the owning user. Cached so the strength advice (which needs
- * this history) can still be computed without a connection.
+ * Past sessions for an exercise, oldest first, grouped by workout —
+ * matched by exercise NAME across every program the user has ever had
+ * (active and archived), not by a single day_exercise_id. A goal switch
+ * archives the old program and creates a new one with fresh day_exercise
+ * rows, so matching by name (instead of by the row that happens to exist
+ * right now) is what keeps history — and therefore the strength advice —
+ * continuous across that switch. RLS scopes every query here to the owning
+ * user. Cached (keyed by user+exercise name, stable across switches) so the
+ * strength advice can still be computed without a connection.
  */
-export async function fetchExerciseHistory(dayExerciseId: string): Promise<HistorySession[]> {
-  return fetchWithCache(`exercise_history:${dayExerciseId}`, () => fetchExerciseHistoryFromNetwork(dayExerciseId));
+export async function fetchExerciseHistory(userId: string, exerciseName: string) {
+  return fetchWithCache(`exercise_history:${userId}:${exerciseName}`, () => fetchExerciseHistoryFromNetwork(userId, exerciseName));
 }
 
-async function fetchExerciseHistoryFromNetwork(dayExerciseId: string): Promise<HistorySession[]> {
+async function fetchExerciseHistoryFromNetwork(userId: string, exerciseName: string) {
+  const { data: programRows, error: programsError } = await supabase.from('programs').select('id').eq('user_id', userId);
+  if (programsError) throw programsError;
+  const programIds = (programRows ?? []).map((row) => row.id);
+  if (programIds.length === 0) return [];
+
+  const { data: dayRows, error: daysError } = await supabase.from('program_days').select('id').in('program_id', programIds);
+  if (daysError) throw daysError;
+  const dayIds = (dayRows ?? []).map((row) => row.id);
+  if (dayIds.length === 0) return [];
+
+  const { data: exerciseRows, error: exercisesError } = await supabase
+    .from('day_exercises')
+    .select('id')
+    .eq('exercise_name', exerciseName)
+    .in('program_day_id', dayIds);
+  if (exercisesError) throw exercisesError;
+  const dayExerciseIds = (exerciseRows ?? []).map((row) => row.id);
+  if (dayExerciseIds.length === 0) return [];
+
   const { data: setRows, error: setLogsError } = await supabase
     .from('set_logs')
-    .select('workout_id, set_order, weight_kg, reps, rir')
-    .eq('day_exercise_id', dayExerciseId)
+    .select('workout_id, day_exercise_id, set_order, weight_kg, reps, rir')
+    .in('day_exercise_id', dayExerciseIds)
     .order('set_order', { ascending: true });
   if (setLogsError) throw setLogsError;
   if (!setRows || setRows.length === 0) return [];
@@ -41,21 +55,17 @@ async function fetchExerciseHistoryFromNetwork(dayExerciseId: string): Promise<H
     .in('id', workoutIds);
   if (workoutsError) throw workoutsError;
 
-  const performedAtByWorkoutId = new Map((workoutRows ?? []).map((row) => [row.id, row.performed_at as string]));
-
-  const sessionsByWorkout = new Map<string, HistorySession>();
-  for (const row of setRows) {
-    const performedAt = performedAtByWorkoutId.get(row.workout_id);
-    if (!performedAt) continue; // shouldn't happen (workout_id is a required FK), but keeps this defensive
-    let session = sessionsByWorkout.get(row.workout_id);
-    if (!session) {
-      session = { workoutId: row.workout_id, performedAt, sets: [] };
-      sessionsByWorkout.set(row.workout_id, session);
-    }
-    session.sets.push({ setOrder: row.set_order, weightKg: row.weight_kg, reps: row.reps, rir: row.rir });
-  }
-
-  return [...sessionsByWorkout.values()].sort((a, b) => a.performedAt.localeCompare(b.performedAt));
+  return groupSetLogsIntoSessions(
+    setRows.map((row) => ({
+      workoutId: row.workout_id,
+      dayExerciseId: row.day_exercise_id,
+      setOrder: row.set_order,
+      weightKg: row.weight_kg,
+      reps: row.reps,
+      rir: row.rir,
+    })),
+    (workoutRows ?? []).map((row) => ({ id: row.id, performedAt: row.performed_at })),
+  );
 }
 
 export interface CardioHistoryEntry extends CardioLog {

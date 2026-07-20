@@ -1,16 +1,16 @@
 import type { EquipmentType, ExperienceLevel } from '@fitness/program-generator';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { LineChart } from '@/components/LineChart';
-import { PhysiqueSilhouette } from '@/components/icons';
-import { SelectableCard } from '@/components/SelectableCard';
 import { useAuth } from '@/lib/auth';
 import { BMI_CATEGORY_LABELS, bmiCategory, calculateBmi } from '@/lib/bmi';
+import { formatShortDate } from '@/lib/dates';
 import { fetchMeasurementHistory, saveMeasurement, type BodyMeasurement } from '@/lib/measurements';
-import { PHYSIQUE_OPTIONS, physiqueOption, type Physique } from '@/lib/physique';
+import { GOAL_LABELS, physiqueOption } from '@/lib/physique';
+import { fetchProgramHistory, type ProgramHistoryEntry } from '@/lib/programs';
 import { updateProfile, useProfile } from '@/lib/profile';
 import { colors } from '@/theme/colors';
 import { radii } from '@/theme/radii';
@@ -31,14 +31,6 @@ const EQUIPMENT_OPTIONS: Array<{ value: EquipmentType; label: string }> = [
 
 const DAYS_PER_WEEK_OPTIONS = [2, 3, 4, 5, 6];
 
-const PHYSIQUE_ICON_VARIANT: Record<Physique, 'muscular' | 'lean' | 'strong' | 'endurance' | 'balanced'> = {
-  muscular_athletic: 'muscular',
-  lean_defined: 'lean',
-  strong_powerful: 'strong',
-  fit_enduring: 'endurance',
-  balanced_general: 'balanced',
-};
-
 function parsePositiveFloat(value: string): number | null {
   const parsed = Number.parseFloat(value.replace(',', '.'));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -47,14 +39,13 @@ function parsePositiveFloat(value: string): number | null {
 function ProfileEditForm({ onClose }: { onClose: () => void }) {
   const { profile, refresh } = useProfile();
   const [displayName, setDisplayName] = useState(profile?.displayName ?? '');
-  const [physique, setPhysique] = useState<Physique | null>(profile?.targetPhysique ?? null);
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel | null>(profile?.experienceLevel ?? null);
   const [daysPerWeek, setDaysPerWeek] = useState<number | null>(profile?.daysPerWeek ?? null);
   const [equipment, setEquipment] = useState<EquipmentType | null>(profile?.equipment ?? null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSave = physique !== null && experienceLevel !== null && daysPerWeek !== null && equipment !== null;
+  const canSave = experienceLevel !== null && daysPerWeek !== null && equipment !== null;
 
   async function handleSave() {
     if (!profile || !canSave) return;
@@ -63,8 +54,6 @@ function ProfileEditForm({ onClose }: { onClose: () => void }) {
     try {
       await updateProfile(profile.id, {
         displayName: displayName.trim() || null,
-        targetPhysique: physique!,
-        goal: physiqueOption(physique!).goal,
         experienceLevel: experienceLevel!,
         daysPerWeek: daysPerWeek!,
         equipment: equipment!,
@@ -82,17 +71,6 @@ function ProfileEditForm({ onClose }: { onClose: () => void }) {
     <Card style={styles.editCard}>
       <Text style={styles.fieldLabel}>Naam</Text>
       <TextInput style={styles.input} value={displayName} onChangeText={setDisplayName} placeholder="Jouw naam" placeholderTextColor={colors.textTertiary} />
-
-      <Text style={styles.fieldLabel}>Streeffysiek</Text>
-      {PHYSIQUE_OPTIONS.map((option) => (
-        <SelectableCard
-          key={option.value}
-          label={option.label}
-          selected={physique === option.value}
-          onPress={() => setPhysique(option.value)}
-          icon={<PhysiqueSilhouette color={physique === option.value ? colors.accent : colors.textSecondary} variant={PHYSIQUE_ICON_VARIANT[option.value]} />}
-        />
-      ))}
 
       <Text style={styles.fieldLabel}>Ervaring</Text>
       <View style={styles.chipRow}>
@@ -195,11 +173,13 @@ export default function ProfileScreen() {
   const { session, signOut } = useAuth();
   const { profile, isLoading: isProfileLoading } = useProfile();
   const { width: windowWidth } = useWindowDimensions();
+  const router = useRouter();
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isAddingMeasurement, setIsAddingMeasurement] = useState(false);
   const [measurements, setMeasurements] = useState<BodyMeasurement[]>([]);
   const [isLoadingMeasurements, setIsLoadingMeasurements] = useState(true);
+  const [programHistory, setProgramHistory] = useState<ProgramHistoryEntry[]>([]);
 
   const loadMeasurements = useCallback(async () => {
     if (!session) return;
@@ -211,10 +191,20 @@ export default function ProfileScreen() {
     }
   }, [session]);
 
+  const loadProgramHistory = useCallback(async () => {
+    if (!session) return;
+    try {
+      setProgramHistory(await fetchProgramHistory(session.user.id));
+    } catch {
+      // Non-critical section — a load failure here shouldn't block the rest of the profile screen.
+    }
+  }, [session]);
+
   useFocusEffect(
     useCallback(() => {
       loadMeasurements();
-    }, [loadMeasurements]),
+      loadProgramHistory();
+    }, [loadMeasurements, loadProgramHistory]),
   );
 
   const latest = measurements[measurements.length - 1] ?? null;
@@ -247,6 +237,9 @@ export default function ProfileScreen() {
             <InfoRow label="Ervaring" value={EXPERIENCE_OPTIONS.find((o) => o.value === profile.experienceLevel)?.label ?? '–'} />
             <InfoRow label="Dagen per week" value={String(profile.daysPerWeek)} />
             <InfoRow label="Materiaal" value={EQUIPMENT_OPTIONS.find((o) => o.value === profile.equipment)?.label ?? '–'} />
+            <Pressable onPress={() => router.push('/switch-goal')}>
+              <Text style={styles.switchGoalLink}>Ander doel kiezen</Text>
+            </Pressable>
           </Card>
         )}
 
@@ -285,6 +278,25 @@ export default function ProfileScreen() {
 
         {!isLoadingMeasurements && !latest && !isAddingMeasurement && (
           <Text style={styles.body}>Nog geen metingen gelogd.</Text>
+        )}
+
+        {programHistory.length > 1 && (
+          <>
+            <Text style={styles.sectionTitleSpaced}>Eerdere schema's</Text>
+            <Card style={styles.viewCard}>
+              {programHistory.map((entry) => (
+                <View key={entry.id} style={styles.programHistoryRow}>
+                  <View style={styles.programHistoryTextColumn}>
+                    <Text style={styles.programHistoryName}>{entry.name}</Text>
+                    <Text style={styles.programHistoryDetail}>
+                      {GOAL_LABELS[entry.goal]} · sinds {formatShortDate(entry.startedAt)}
+                    </Text>
+                  </View>
+                  {entry.status === 'active' && <Text style={styles.programHistoryActiveBadge}>Actief</Text>}
+                </View>
+              ))}
+            </Card>
+          </>
         )}
 
         <View style={styles.signOutButtonWrap}>
@@ -345,10 +357,47 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...typography.heading,
   },
+  sectionTitleSpaced: {
+    ...typography.heading,
+    marginTop: spacing.lg,
+  },
+  programHistoryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  programHistoryTextColumn: {
+    flex: 1,
+  },
+  programHistoryName: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  programHistoryDetail: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  programHistoryActiveBadge: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: spacing.md,
+  },
   editLink: {
     color: colors.accent,
     fontSize: 13,
     fontWeight: '600',
+  },
+  switchGoalLink: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: spacing.md,
   },
   infoRow: {
     flexDirection: 'row',

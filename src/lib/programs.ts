@@ -12,27 +12,13 @@ export interface OnboardingProfileExtras {
   targetWeightKg?: number | null;
 }
 
-/** Persists an intake + its generated program: profile upsert, then program -> program_days -> day_exercises. */
-export async function saveGeneratedProgram(
-  userId: string,
-  intake: IntakeAnswers,
-  program: GeneratedProgram,
-  profileExtras: OnboardingProfileExtras,
-): Promise<void> {
-  const { error: profileError } = await supabase.from('profiles').upsert({
-    id: userId,
-    goal: intake.goal,
-    experience_level: intake.experienceLevel,
-    days_per_week: intake.daysPerWeek,
-    equipment: intake.equipment,
-    display_name: profileExtras.displayName ?? null,
-    target_physique: profileExtras.targetPhysique,
-    gender: profileExtras.gender ?? null,
-    birth_year: profileExtras.birthYear ?? null,
-    target_weight_kg: profileExtras.targetWeightKg ?? null,
-  });
-  if (profileError) throw profileError;
-
+/**
+ * Inserts a generated program's full structure (program -> program_days ->
+ * day_exercises) and returns the new program's id. Shared by onboarding
+ * (`saveGeneratedProgram`) and switching goals (`switchGoal.ts`) — the two
+ * places a brand new program gets created — so they can never drift apart.
+ */
+export async function insertProgramStructure(userId: string, program: GeneratedProgram): Promise<string> {
   const { data: programRow, error: programError } = await supabase
     .from('programs')
     .insert({ user_id: userId, name: program.name, goal: program.goal, template_key: program.templateKey })
@@ -68,6 +54,57 @@ export async function saveGeneratedProgram(
 
   const { error: exercisesError } = await supabase.from('day_exercises').insert(exerciseRows);
   if (exercisesError) throw exercisesError;
+
+  return programRow.id as string;
+}
+
+/** Persists an intake + its generated program: profile upsert, then insertProgramStructure. */
+export async function saveGeneratedProgram(
+  userId: string,
+  intake: IntakeAnswers,
+  program: GeneratedProgram,
+  profileExtras: OnboardingProfileExtras,
+): Promise<void> {
+  const { error: profileError } = await supabase.from('profiles').upsert({
+    id: userId,
+    goal: intake.goal,
+    experience_level: intake.experienceLevel,
+    days_per_week: intake.daysPerWeek,
+    equipment: intake.equipment,
+    display_name: profileExtras.displayName ?? null,
+    target_physique: profileExtras.targetPhysique,
+    gender: profileExtras.gender ?? null,
+    birth_year: profileExtras.birthYear ?? null,
+    target_weight_kg: profileExtras.targetWeightKg ?? null,
+  });
+  if (profileError) throw profileError;
+
+  await insertProgramStructure(userId, program);
+}
+
+export interface ProgramHistoryEntry {
+  id: string;
+  name: string;
+  goal: GeneratedProgram['goal'];
+  status: 'active' | 'completed' | 'archived';
+  startedAt: string;
+}
+
+/** Every program the user has ever had (active + archived), newest first — the "reis" overview in Profiel. */
+export async function fetchProgramHistory(userId: string): Promise<ProgramHistoryEntry[]> {
+  const { data, error } = await supabase
+    .from('programs')
+    .select('id, name, goal, status, started_at')
+    .eq('user_id', userId)
+    .order('started_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    goal: row.goal,
+    status: row.status,
+    startedAt: row.started_at,
+  }));
 }
 
 export interface ActiveProgramExercise {

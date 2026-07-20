@@ -77,7 +77,14 @@ export interface CurrentProgramState {
 
 // ---------- Adjustments ----------
 
-export type AdjustmentType = 'volume_increase' | 'volume_decrease' | 'deload' | 'reduce_days';
+/**
+ * `goal_changed` is never produced by `evaluateWeek` — it's logged by the
+ * app layer when the user switches streeffysiek/goal (see
+ * src/lib/switchGoal.ts) and shares this vocabulary purely so it renders
+ * through the same week-review/adjustment-history UI as the planner's own
+ * adjustments.
+ */
+export type AdjustmentType = 'volume_increase' | 'volume_decrease' | 'deload' | 'reduce_days' | 'goal_changed';
 
 export interface Adjustment {
   type: AdjustmentType;

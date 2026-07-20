@@ -83,6 +83,22 @@ optionele `children`-slot (backwards-compatibel) om de nieuwe
 tonen; de balken vullen zich met een korte, gestaggerde animatie en tonen
 altijd ook het numerieke label (1-5), niet alleen kleur/lengte.
 
+**Extra (na Fase 1), stap 7: schema wisselen via streeffysiek, historie
+blijft.** Vanaf de Schema-tab (en het profielscherm) kan de gebruiker op elk
+moment een ander streeffysiek kiezen — hetzelfde keuzescherm als de
+onboarding, nu uitgepakt naar een gedeelde `PhysiquePicker`-component — en
+zo overstappen naar een nieuw doel/schema. Geen datamodelwijziging nodig:
+`programs.status` ('active'/'archived') en de vrije-tekst
+`program_adjustments.adjustment_type`-kolom ondersteunden dit al sinds
+migratie 0001; deze stap voegt alleen een nieuwe waarde toe aan het
+TypeScript-vocabulaire (`goal_changed`) en de bijbehorende orkestratielogica
+(`src/lib/switchGoal.ts`). Cruciaal: gewichtshistorie per oefening wordt nu
+gematcht op **oefeningsnaam over al iemands programma's heen** (oud +
+nieuw) in plaats van op een los `day_exercise_id`, zodat de kracht-engine na
+een wissel gewoon doorpakt op oefeningen die in beide schema's voorkomen —
+zie de aannames-sectie voor de details en de reden waarom dit géén
+databasemigratie nodig had.
+
 ## Architectuurkeuzes gemaakt in deze sessie
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
@@ -601,6 +617,61 @@ Nog open voor Fase 2:
   Niet geverifieerd: de daadwerkelijke onboarding- en schema-bewerkflows
   tegen een echte database.
 
+### Aannames bij stap 7 (schema wisselen via streeffysiek)
+
+- **Geen migratie nodig**: `programs.status` heeft sinds migratie 0001 al
+  de waarden `active`/`completed`/`archived`, en
+  `program_adjustments.adjustment_type` is een vrije-tekstkolom (geen
+  DB-enum). Beide waren dus al voldoende voor "meerdere programma's per
+  gebruiker, één actief" en voor een nieuw soort aanpassing
+  (`goal_changed`) — deze stap voegt alleen een nieuwe waarde toe aan het
+  TypeScript-vocabulaire in `@fitness/adaptation-planner`, niet aan het
+  datamodel.
+- **Bewust géén unique-index op "één actief programma per gebruiker"**:
+  overwogen, maar losgelaten omdat die zou botsen met de gekozen,
+  veiligere volgorde hieronder. `fetchActiveProgram`'s
+  "nieuwste `started_at` eerst"-selectie geeft in de praktijk al hetzelfde
+  resultaat.
+- **Volgorde: eerst het nieuwe programma invoegen, dán het oude
+  archiveren** (`src/lib/switchGoal.ts`) — nooit andersom. De client heeft
+  geen databasetransactie tot zijn beschikking; met deze volgorde blijft
+  een gebruiker bij een fout halverwege altijd met een werkend actief
+  programma zitten, in plaats van tijdelijk zonder.
+- **Historie matchen op oefeningsnaam, niet op `day_exercise_id`**:
+  `fetchExerciseHistory` (in `src/lib/history.ts`) zoekt nu over alle
+  programma's van de gebruiker heen (actief + gearchiveerd) naar
+  `day_exercise`-rijen met dezelfde `exercise_name`, en voegt hun
+  `set_logs` samen tot één chronologische geschiedenis. Dit is een
+  bewuste aanname: twee oefeningen met exact dezelfde naam worden als
+  "dezelfde oefening" behandeld — consistent met hoe "vervang oefening" in
+  de Schema-tab al werkt. De groepeerlogica zelf is uitgepakt naar een
+  pure, geteste functie (`src/lib/exerciseHistoryMerge.ts`) juist om dit
+  zonder Supabase te kunnen verifiëren.
+- **Nieuwe root-vitest-scope voor pure app-laag-code**: tot nu toe hadden
+  alleen de `packages/*` een testrunner; `src/lib` was ongetest
+  Supabase-lijmcode. `groupSetLogsIntoSessions` is de eerste écht pure
+  functie in `src/lib`, dus is er een schaalbare `vitest.config.ts` op de
+  root toegevoegd (scope: `src/**/*.test.ts`), zonder de bestaande
+  package-tests te raken. `npm run test` draait nu 79 tests in totaal.
+- **`saveGeneratedProgram` hergebruikt nu `insertProgramStructure`**: de
+  program/dagen/oefeningen-insertlogica stond alleen in de onboarding-flow;
+  die is uitgepakt zodat `switchGoal` hem kan hergebruiken in plaats van
+  hem te dupliceren.
+- **Profiel-tab bewerkt geen streeffysiek meer inline**: dat veld stond
+  eerst ook los bewerkbaar in het profielformulier, maar sloeg dan alleen
+  `profiles.target_physique`/`goal` op zonder ook echt een nieuw schema te
+  genereren — een verborgen inconsistentie. Nu wijst het profielscherm
+  (en de Schema-tab) naar hetzelfde `switch-goal`-scherm, zodat er nog
+  maar één pad is dat het doel daadwerkelijk kan wijzigen.
+- **"Eerdere schema's" (optioneel) toegevoegd aan Profiel**: een simpele
+  lijst via `fetchProgramHistory`, alleen zichtbaar zodra er meer dan één
+  programma is; faalt stil (geen foutmelding aan de gebruiker) zodat een
+  probleem hiermee nooit de rest van het profielscherm blokkeert.
+- **Dagen/ervaring/materiaal wijzigen in Profiel regenereert het schema
+  niet**: dat was al zo vóór deze stap en blijft buiten scope — alleen
+  streeffysiek/doel-wijzigingen lopen nu via de nieuwe, correcte
+  switch-flow.
+
 ## Niet gebouwd (bewust, voor latere fases)
 
 Wearables, voeding, social features, AI-chat, een vrije van-nul-af-aan
@@ -629,28 +700,35 @@ app/                        Expo Router routes
     [dayExerciseId].tsx         Historie per oefening (kracht of cardio): lijngrafiek(en) + lijst per sessie
   week-review.tsx               Week-overzicht: voorgestelde aanpassingen aan-/uitvinken en bevestigen
   adjustment-history.tsx        Uitleg-geschiedenis: alle program_adjustments, per week gegroepeerd
+  switch-goal.tsx                Ander streeffysiek/doel kiezen: PhysiquePicker + bevestiging, archiveert oud programma
 src/
   components/
     SyncStatusBadge.tsx        Offline / N niet gesynchroniseerd / Gesynchroniseerd — workout + Vandaag
     Card.tsx / Button.tsx / SelectableCard.tsx / EmptyState.tsx / ProgressDots.tsx / StatTile.tsx
                                  Designsysteem-componenten, gedeeld door alle vier de tabs + onboarding
     LineChart.tsx                Herbruikbare SVG-lijngrafiek (uit historiescherm getrokken; ook gebruikt in Profiel)
+    StatBars.tsx                  Geanimeerde stat-balken voor de streeffysiek-kaarten
+    PhysiquePicker.tsx            Het ene streeffysiek-keuzescherm — onboarding, profiel-edit én switch-goal delen dit
     icons.tsx                    Dependency-vrije SVG-icoonset (tab-iconen + PhysiqueSilhouette-placeholder)
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
     auth.tsx                   AuthProvider + useAuth hook
     profile.tsx                ProfileProvider + useProfile hook + updateProfile() (profiles-rij van huidige user)
-    physique.ts                 PHYSIQUE_OPTIONS + goalForPhysique() — enige plek voor streeffysiek→doel
+    physique.ts                 PHYSIQUE_OPTIONS + goalForPhysique() + GOAL_LABELS — enige plek voor streeffysiek→doel
+    physiqueStats.ts             PHYSIQUE_STATS — presentatie-only trainingsprofiel-stats per streeffysiek
     bmi.ts                       calculateBmi() / bmiCategory() — pure berekening, nooit opgeslagen
     measurements.ts              saveMeasurement() / fetchMeasurementHistory() — body_measurements-tijdreeks
-    programs.ts                saveGeneratedProgram / fetchActiveProgram / fetchProgramDayWithExercises
+    programs.ts                saveGeneratedProgram / insertProgramStructure / fetchActiveProgram / fetchProgramDayWithExercises / fetchProgramHistory
+    switchGoal.ts                 switchGoal() — nieuw programma invoegen, oude archiveren, profiel + adjustment-log bijwerken
     schemaEditor.ts              fetchSchemaProgram + updateExerciseSets/replaceExercise/swapExerciseOrder/addDay/removeDay
     progressStats.ts             fetchWeeklyVolume / fetchMonthlyWorkoutCount / fetchLongestStreak
     offlineQueue.ts             FIFO sync-wachtrij (AsyncStorage), idempotente upserts, subscribeToQueue
     offlineCache.ts              fetchWithCache() — network-first leescache, fallback bij netwerkfout
     useSyncStatus.ts             Hook: wachtrijlengte (live) + NetInfo online/offline
     id.ts                       generateId() — client-side UUID's voor offline-veilige writes
-    history.ts                  fetchExerciseHistory() + fetchCardioHistory() — gedeeld door advies en historie
+    history.ts                  fetchExerciseHistory() (per oefeningsnaam, over alle programma's) + fetchCardioHistory()
+    exerciseHistoryMerge.ts       groupSetLogsIntoSessions() — pure, geteste groepeerlogica achter fetchExerciseHistory
+    exerciseHistoryMerge.test.ts  Bewijst: logs overleven een schemawissel + de kracht-engine pakt ze op
     weekReview.ts                fetchWeekReview() / applyWeekReview() — databrug naar @fitness/adaptation-planner
     adjustmentHistory.ts         fetchAdjustmentHistory() — alle program_adjustments van het actieve programma
     adjustmentLabels.ts          Gedeelde Nederlandse labels per AdjustmentType (week-review + geschiedenis)
@@ -696,6 +774,7 @@ supabase/
     0002_adaptation_planner.sql  Weekteller, is_active op program_days, week_number/is_deload + insert-policy
     0003_physique_and_measurements.sql
                                  target_physique/gender/birth_year/target_weight_kg op profiles + body_measurements-tabel
+vitest.config.ts               Root-scope testrunner voor pure src/lib-modules (src/**/*.test.ts), naast de package-tests
 ```
 
 ## Hoe te draaien
@@ -703,7 +782,7 @@ supabase/
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages samen (75 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (79 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```
