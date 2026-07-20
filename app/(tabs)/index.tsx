@@ -4,11 +4,13 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { useAuth } from '@/lib/auth';
 import { fetchActiveProgram, type ActiveProgram } from '@/lib/programs';
 import { colors } from '@/theme/colors';
+import { fetchWeekReview, type WeekReview } from '@/lib/weekReview';
 
 export default function TodayScreen() {
   const { session, signOut } = useAuth();
   const router = useRouter();
   const [program, setProgram] = useState<ActiveProgram | null>(null);
+  const [weekReview, setWeekReview] = useState<WeekReview | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,7 +19,12 @@ export default function TodayScreen() {
     setIsLoading(true);
     setError(null);
     try {
-      setProgram(await fetchActiveProgram(session.user.id));
+      const [activeProgram, review] = await Promise.all([
+        fetchActiveProgram(session.user.id),
+        fetchWeekReview(session.user.id),
+      ]);
+      setProgram(activeProgram);
+      setWeekReview(review);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Kon je programma niet laden.');
     } finally {
@@ -46,6 +53,17 @@ export default function TodayScreen() {
       )}
 
       {!isLoading && error && <Text style={styles.error}>{error}</Text>}
+
+      {!isLoading && !error && weekReview && (
+        <Pressable style={styles.weekReviewBanner} onPress={() => router.push('/week-review')}>
+          <Text style={styles.weekReviewBannerTitle}>Week {weekReview.weekNumber} voltooid</Text>
+          <Text style={styles.weekReviewBannerBody}>
+            {weekReview.adjustments.length > 0
+              ? `${weekReview.adjustments.length} voorgestelde aanpassing${weekReview.adjustments.length === 1 ? '' : 'en'} — bekijk en bevestig`
+              : 'Bekijk je week-overzicht'}
+          </Text>
+        </Pressable>
+      )}
 
       {!isLoading && !error && program && todayDay && (
         <View style={styles.card}>
@@ -105,6 +123,22 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: 14,
     marginTop: 12,
+  },
+  weekReviewBanner: {
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 12,
+  },
+  weekReviewBannerTitle: {
+    color: colors.background,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  weekReviewBannerBody: {
+    color: colors.background,
+    fontSize: 14,
+    marginTop: 2,
   },
   card: {
     backgroundColor: colors.surface,

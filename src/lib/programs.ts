@@ -150,6 +150,7 @@ export async function fetchActiveProgram(userId: string): Promise<ActiveProgram 
     .from('program_days')
     .select('id, day_order, name, day_exercises (id, exercise_order, exercise_name, muscle_group, sets, rep_range_min, rep_range_max, target_rir)')
     .eq('program_id', programRow.id)
+    .eq('is_active', true)
     .order('day_order', { ascending: true });
   if (daysError) throw daysError;
 

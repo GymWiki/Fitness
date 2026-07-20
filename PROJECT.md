@@ -28,6 +28,16 @@ in het workout-scherm, en cardio in het historiescherm. Zie de aparte
 aannames-sectie verderop voor de details en het belangrijkste open punt (nog
 niet bereikbaar via de normale intake-flow).
 
+**Extra (na Fase 1), stap 2: wekelijkse adaptatieplanner.** De laag die het
+schema automatisch laat meegroeien: na elke volledige cyclus door het
+programma evalueert de planner volume-opbouw, herstel/deload en
+therapietrouw, en de gebruiker bevestigt (of past selectief toe) de
+voorgestelde aanpassingen in een nieuw week-overzichtscherm. Zie de aparte
+aannames-sectie verderop; het belangrijkste open punt is dat `distributeSessions`
+(interference-vrije weekindeling) wel volledig gebouwd en getest is, maar nog
+niet aan een echt weekdag-veld gekoppeld kan worden — dat veld bestaat nog
+niet in het schema (zie ook het cardio-in-generator open punt hierboven).
+
 ## Architectuurkeuzes gemaakt in deze sessie
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
@@ -166,6 +176,62 @@ niet bereikbaar via de normale intake-flow).
   is — hartslag per sessie over tijd. Het scherm weet via een `kind`
   route-param (meegegeven vanuit het workout-scherm) welke databron en welke
   weergave het moet gebruiken.
+- **Nieuw package `@fitness/adaptation-planner`**: derde pure-functiepackage,
+  zelfde opzet als de andere twee. Vier functies:
+  - `shouldDeload(recentWeeks, cycleLengthWeeks?)` — weken sinds de laatste
+    deload, of twee weken op rij herstelsignalen (zelfde "twee-strikes"-
+    principe als de kracht-engine's deload-beslissing, i.p.v. op één
+    slechte week reageren).
+  - `evaluateWeek(weekLogs, program, goal)` — checkt eerst therapietrouw: bij
+    ≥50% gemiste sessies is `reduce_days` de enige aanpassing die dat pass
+    voorstelt (volume-adviezen worden expliciet overgeslagen — meer volume
+    voorstellen terwijl het bestaande schema niet eens gehaald wordt, is
+    slechte coaching). Zonder dat adherence-probleem: per spiergroep
+    `volume_decrease` als reps onder de streef-range vielen, anders (alleen
+    bij `goal === 'hypertrophy'`) `volume_increase` als alle sets de
+    bovenkant van de range op de streef-RIR haalden. Roept daarna
+    `shouldDeload` aan, onafhankelijk van de adherence-aanpassing (herstel en
+    therapietrouw zijn losse assen).
+  - `applyAdjustments(program, adjustments)` — muteert het programma
+    mechanisch. Cruciaal: "dagen verkleinen" verwijdert nooit
+    `day_exercises` (dat cascadeert naar `set_logs`/`cardio_logs` en zou
+    trainingsgeschiedenis vernietigen) — het programma-object laat alleen de
+    hoogste `dayOrder`-dagen weg, en de datalaag persisteert dat als
+    `program_days.is_active = false`, niet als een delete. `deload` muteert
+    ook geen sets: het is een vlag (`isDeloadWeek`) zodat een deload
+    tijdelijk is en het schema er volgende week weer normaal bij staat.
+  - `distributeSessions(strengthDays, cardioSessions, goal)` — legt
+    krachtdagen op een vast, gelijkmatig gespreid weekdagpatroon (zelfde
+    geest als de dag-archetypes van de generator), en plaatst cardio in de
+    resterende dagen. Intensieve cardio mijdt zowel de zware beendag zelf als
+    de dag ervóór; voor cardio-centrische doelen (endurance/fat_loss/mixed)
+    geldt die bescherming ook voor rustige zone2-cardio, voor
+    kracht-centrische doelen (strength/hypertrophy) alleen voor intervallen.
+- **`src/lib/weekReview.ts`**: databrug tussen Supabase en de pure planner.
+  `fetchWeekReview` bepaalt of er een nieuwe volledige cyclus door de actieve
+  dagen is afgerond sinds de laatst geëvalueerde week
+  (`completedCycles = floor(totalWorkouts / daysPerWeek)` vergeleken met
+  `programs.current_week_number`) en bouwt zo ja de `WeekLog`/
+  `CurrentProgramState` op uit `workouts`/`set_logs`/`day_exercises`, plus de
+  week-geschiedenis (`RecentWeekSummary[]`) gereconstrueerd uit
+  `program_adjustments` (geen aparte weken-tabel nodig: `wasDeload` = een
+  `is_deload`-rij die week, `hasRecoverySignal` = een `volume_decrease`-rij
+  die week). `applyWeekReview` persisteert een (eventueel door de gebruiker
+  gedeeltelijk afgevinkte) subset van de voorgestelde aanpassingen: UPDATE op
+  `day_exercises.sets`, UPDATE `program_days.is_active`, INSERT
+  `program_adjustments`-rijen, en telt `programs.current_week_number` op.
+- **RLS-aanname uit stap 1 bijgesteld**: `program_adjustments` had bewust
+  alléén een select-policy, met als aanname dat een server-side proces (edge
+  function) de tabel zou vullen. De planner draait client-side op expliciete
+  bevestiging van de gebruiker, dus is er alsnog een insert-policy
+  toegevoegd (migratie 0002) — dit is een bewuste correctie op de eerdere
+  aanname, geen achteloze verzwakking van de RLS.
+- **Week-overzichtscherm (`app/week-review.tsx`) + banner op "Vandaag"**: de
+  banner verschijnt zodra `fetchWeekReview` een niet-nul resultaat geeft. Het
+  scherm toont elke voorgestelde aanpassing als een aan-/uitvinkbare kaart
+  (standaard allemaal aan) met reden en oude→nieuwe waarde, en een
+  "Bevestigen"-knop — nooit stilletjes toegepast. Bij nul aanpassingen toont
+  het scherm een geruststellende "ga zo door"-melding i.p.v. een lege lijst.
 
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
@@ -272,8 +338,44 @@ Toegevoegd bij de cardio-engine (`packages/progression-engine/src/cardio.ts`,
     `rondes × 7 minuten` (4 min hard + 3 min rustig per Noorse-4×4-ronde) als
     grove schatting; de gebruiker past het aan naar de werkelijke duur.
 
-Nog open voor Fase 2 (Fase 1 is met stap 1 t/m 6 compleet; dit blijft relevant
-zodra therapietrouw, cardio-programmering en verdere adaptatie aan bod komen):
+Toegevoegd bij de wekelijkse adaptatieplanner (`packages/adaptation-planner/`,
+`src/lib/weekReview.ts`, `app/week-review.tsx`):
+- **Therapietrouw-grens: ≥50% gemiste sessies**: dit is de eerder open vraag
+  "hoe wordt therapietrouw precies gemeten" — nu concreet ingevuld als een
+  drempel van de helft van de geplande sessies in één trainingsweek
+  (2 van 4, 3 van 6, etc.). Bij het halen daarvan wordt het schema met één
+  dag verkleind (nooit onder de 2 dagen/week uit de intake-check) en worden
+  volume-aanpassingen dat pass overgeslagen.
+- **Eén trainingsweek = één cyclus door de actieve dagen, geen kalenderweek**:
+  `fetchWeekReview` telt hoeveel workouts er in totaal tegen de actieve
+  `program_days` zijn gelogd, deelt door `daysPerWeek`, en vergelijkt dat met
+  `programs.current_week_number`. Dit betekent dat een trainingsweek langer
+  of korter dan 7 kalenderdagen kan duren als iemand niet op een vast ritme
+  traint — een bewuste keuze, consistent met hoe "Vandaag" de eerstvolgende
+  dag nu al bepaalt (workout-telling, niet kalenderdatums).
+  - **Alleen kracht telt mee in de volume-evaluatie**: `evaluateWeek`
+    filtert op `day_exercises.kind === 'strength'` voor de spiergroep-
+    volume-logica; cardio-sessies tellen wel mee voor de "is deze dag
+    gedaan"-check (therapietrouw), maar niet voor volume+/-. Cardio heeft
+    immers geen setsvolume-concept — de eigen 80/20-verdeling regelt dat al.
+- **Week-geschiedenis gereconstrueerd, geen aparte weken-tabel**: in plaats
+  van een `program_weeks`-tabel bij te houden, leidt `fetchWeekReview`
+  `RecentWeekSummary[]` af uit `program_adjustments` (gegroepeerd op
+  `week_number`). Een week zonder enige aanpassing telt impliciet als
+  "geen deload, geen herstelsignaal" — er hoeft dus geen rij te bestaan voor
+  een rustige week.
+- **`applyAdjustments` verwijdert nooit `day_exercises`**: een
+  `reduce_days`-aanpassing laat historische oefeningen en hun `set_logs`
+  intact; de datalaag zet alleen `program_days.is_active = false`. Dit was
+  een harde eis, geen smaakkeuze — de foreign keys in het schema cascaderen
+  bij een delete en zouden trainingsgeschiedenis vernietigen.
+- **Bevestiging is selectief, niet alles-of-niets**: het week-overzicht laat
+  elke voorgestelde aanpassing losstaand aan-/uitvinken (standaard allemaal
+  aan) voordat "Bevestigen" ze toepast; `applyWeekReview` accepteert een
+  subset van `evaluateWeek`'s output, dus de gebruiker kan bijvoorbeeld een
+  deload overnemen zonder de volume-verhoging, of andersom.
+
+Nog open voor Fase 2:
 - **Bodyweight-progressie**: de kracht-progressie-engine werkt op gewicht;
   voor pure bodyweight-oefeningen (waar gewicht vaak 0 kg is) geeft dat geen
   zinvolle progressie. Nog te ontwerpen: repetitie-gebaseerde progressie of
@@ -281,24 +383,31 @@ zodra therapietrouw, cardio-programmering en verdere adaptatie aan bod komen):
 - **Cardio-oefeningen komen nog niet uit de generator**: de cardio-invoer,
   het advies en de historie zijn nu volledig gebouwd en getest, maar
   `@fitness/program-generator` zet nog geen cardio-`day_exercises` in
-  gegenereerde programma's (bewust buiten scope gehouden — zie de
-  weekplanner hieronder). Dat betekent dat een gebruiker die via de normale
-  intake een programma laat genereren, in de praktijk nooit een cardio-slot
-  in "Vandaag" ziet totdat de generator dat ook daadwerkelijk aanmaakt. Om
-  deze functionaliteit te kunnen proberen is voorlopig een handmatig
-  aangemaakte `day_exercises`-rij met `kind = 'cardio_duration'` of
-  `'cardio_interval'` nodig.
-- Hoe therapietrouw ("sessies overgeslagen") precies wordt gemeten (aantal
-  gemiste sessies per periode?) voordat het schema wordt verkleind.
-- Hoe de interference-check (cardio niet vlak vóór zware krachtdag) precies
-  wordt ingebouwd in de weekplanner-output — de generator bouwt nog geen
-  cardio-dagen/blokken in programma's; dat volgt zodra de interference-regel
-  is uitgewerkt en cardio-oefeningen daadwerkelijk gegenereerd worden.
-- `program_adjustments` (de tabel voor server-side adaptatiebeslissingen) is
-  in het datamodel aanwezig sinds stap 1, maar er is nog geen scheduled
-  job/edge function die hem vult — de progressie-engines (kracht én cardio)
-  draaien nu alleen client-side, per keer dat de gebruiker het workout-scherm
-  opent.
+  gegenereerde programma's. Dat betekent dat een gebruiker die via de
+  normale intake een programma laat genereren, in de praktijk nooit een
+  cardio-slot in "Vandaag" ziet. Om deze functionaliteit te kunnen proberen
+  is voorlopig een handmatig aangemaakte `day_exercises`-rij met
+  `kind = 'cardio_duration'` of `'cardio_interval'` nodig.
+- **`distributeSessions` is gebouwd en getest, maar nergens live aangeroepen**:
+  de functie legt kracht- en cardiosessies op weekdagen (1-7) met
+  interference-vrije plaatsing, maar `program_days` heeft geen weekdag-veld
+  om die uitkomst in op te slaan — er bestaat nu domweg geen kalender-concept
+  in het schema. Dit hoort logisch bij dezelfde stap als "cardio-oefeningen
+  komen nog niet uit de generator": zodra de generator ook cardio inplant,
+  heeft `program_days` een weekdag-kolom nodig en kan `distributeSessions`
+  daadwerkelijk de indeling bepalen in plaats van alleen getest te zijn.
+- **`program_adjustments` wordt nu client-side gevuld, niet door een
+  scheduled job**: de oorspronkelijke aanname uit stap 1 (server-side/edge
+  function) is losgelaten omdat de opdracht voor de planner expliciet om
+  bevestiging door de gebruiker vroeg — zie de RLS-aanname hierboven. Een
+  toekomstige server-side variant (bijv. een wekelijkse cron die
+  `evaluateWeek` alvast klaarzet) zou dezelfde pure functies kunnen
+  hergebruiken; alleen de databrug zou dan verhuizen.
+- **Geen speciale UI voor een lopende deload-week**: `isDeloadWeek` wordt wel
+  correct berekend en gepersisteerd (impliciet via `program_adjustments.is_deload`),
+  maar het workout-scherm leest die vlag nog niet uit om bijvoorbeeld het
+  kracht-advies automatisch te dempen tijdens een deload-week — dat advies
+  komt nu alleen uit `getStrengthAdvice`'s eigen sessie-op-sessie logica.
 
 ## Niet gebouwd (bewust, voor latere fases)
 
@@ -321,6 +430,7 @@ app/                        Expo Router routes
     [dayId].tsx                 Workout-invoer: StrengthLogger + CardioLogger, offline-first
   history/
     [dayExerciseId].tsx         Historie per oefening (kracht of cardio): lijngrafiek(en) + lijst per sessie
+  week-review.tsx               Week-overzicht: voorgestelde aanpassingen aan-/uitvinken en bevestigen
 src/
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
@@ -330,6 +440,7 @@ src/
     offlineQueue.ts             FIFO sync-wachtrij (AsyncStorage) met idempotente upserts, incl. log_cardio
     id.ts                       generateId() — client-side UUID's voor offline-veilige writes
     history.ts                  fetchExerciseHistory() + fetchCardioHistory() — gedeeld door advies en historie
+    weekReview.ts                fetchWeekReview() / applyWeekReview() — databrug naar @fitness/adaptation-planner
   theme/
     colors.ts                  Donker kleurenpalet
 packages/
@@ -350,9 +461,22 @@ packages/
       generate.ts                 generateProgram(intake) -> GeneratedProgram
     tests/
       generate.test.ts
+  adaptation-planner/         Pure, framework-onafhankelijke wekelijkse adaptatieplanner
+    src/
+      types.ts
+      deload.ts                  shouldDeload(recentWeeks)
+      evaluate.ts                 evaluateWeek(weekLogs, program, goal)
+      apply.ts                    applyAdjustments(program, adjustments)
+      distribute.ts                distributeSessions(strengthDays, cardioSessions, goal)
+    tests/
+      deload.test.ts
+      evaluate.test.ts
+      apply.test.ts
+      distribute.test.ts
 supabase/
   migrations/
     0001_init.sql              Volledig Fase 1-datamodel + RLS
+    0002_adaptation_planner.sql  Weekteller, is_active op program_days, week_number/is_deload + insert-policy
 ```
 
 ## Hoe te draaien
@@ -360,7 +484,7 @@ supabase/
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests progressie-engine + program-generator (44 tests)
+npm run test           # unit tests, alle packages samen (68 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```
