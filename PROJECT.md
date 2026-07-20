@@ -775,6 +775,9 @@ aangeraakt.
 ## Projectstructuur
 
 ```
+.github/
+  workflows/
+    supabase-migrations.yml  Past supabase/migrations/*.sql toe op main bij wijzigingen (zie CI/CD-sectie)
 app/                        Expo Router routes
   _layout.tsx                Root layout: Auth-/ProfileProvider + 3-weg Stack.Protected gate
   (auth)/
@@ -870,6 +873,32 @@ supabase/
                                  target_physique/gender/birth_year/target_weight_kg op profiles + body_measurements-tabel
 vitest.config.ts               Root-scope testrunner voor pure src/lib-modules (src/**/*.test.ts), naast de package-tests
 ```
+
+## CI/CD: migraties automatisch toepassen
+
+`.github/workflows/supabase-migrations.yml` draait `supabase db push` zodra
+een merge naar `main` bestanden in `supabase/migrations/` wijzigt (plus een
+handmatige "Run workflow"-knop in de Actions-tab voor als je 'm meteen wilt
+draaien zonder nieuwe commit). Dit bestaat specifiek omdat migratie 0003 een
+hele sessie lang in de repo stond zonder ooit toegepast te zijn — er was
+geen enkel automatisch signaal dat dat was misgegaan, alleen een bug
+downstream die er niets mee te maken leek te hebben. `supabase db push` is
+idempotent (past alleen migraties toe die nog niet in de remote
+migratiehistorie staan), dus opnieuw draaien is altijd veilig.
+
+**Vereist drie repository secrets** (Settings → Secrets and variables →
+Actions → "New repository secret") — die kan ik niet zelf toevoegen, dat
+moet in de GitHub-instellingen zelf:
+
+| Secret | Waar te vinden |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | https://supabase.com/dashboard/account/tokens — genereer een nieuwe personal access token |
+| `SUPABASE_PROJECT_REF` | Project → Settings → General → "Reference ID" (voor deze app: `xafjhpztfbyhozyruarh`) |
+| `SUPABASE_DB_PASSWORD` | Het database-wachtwoord dat je koos bij het aanmaken van het project — te resetten via Project → Settings → Database als je 'm niet meer weet |
+
+Zolang deze secrets ontbreken faalt de workflow gewoon zichtbaar in de
+Actions-tab (in plaats van stil niets te doen), dus het ergste geval is
+"geen automatische toepassing", niet "een onopgemerkte fout".
 
 ## Hoe te draaien
 
