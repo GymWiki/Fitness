@@ -1,12 +1,23 @@
 import type { GeneratedProgram, IntakeAnswers } from '@fitness/program-generator';
+import type { Gender } from './profile';
+import type { Physique } from './physique';
 import { fetchWithCache } from './offlineCache';
 import { supabase } from './supabase';
+
+export interface OnboardingProfileExtras {
+  displayName?: string | null;
+  targetPhysique: Physique;
+  gender?: Gender | null;
+  birthYear?: number | null;
+  targetWeightKg?: number | null;
+}
 
 /** Persists an intake + its generated program: profile upsert, then program -> program_days -> day_exercises. */
 export async function saveGeneratedProgram(
   userId: string,
   intake: IntakeAnswers,
   program: GeneratedProgram,
+  profileExtras: OnboardingProfileExtras,
 ): Promise<void> {
   const { error: profileError } = await supabase.from('profiles').upsert({
     id: userId,
@@ -14,6 +25,11 @@ export async function saveGeneratedProgram(
     experience_level: intake.experienceLevel,
     days_per_week: intake.daysPerWeek,
     equipment: intake.equipment,
+    display_name: profileExtras.displayName ?? null,
+    target_physique: profileExtras.targetPhysique,
+    gender: profileExtras.gender ?? null,
+    birth_year: profileExtras.birthYear ?? null,
+    target_weight_kg: profileExtras.targetWeightKg ?? null,
   });
   if (profileError) throw profileError;
 
@@ -59,6 +75,7 @@ export interface ActiveProgramExercise {
   exerciseOrder: number;
   exerciseName: string;
   muscleGroup: string | null;
+  kind: 'strength' | 'cardio_duration' | 'cardio_interval';
   sets: number | null;
   repRangeMin: number | null;
   repRangeMax: number | null;
@@ -165,7 +182,7 @@ async function fetchActiveProgramFromNetwork(userId: string): Promise<ActiveProg
 
   const { data: dayRows, error: daysError } = await supabase
     .from('program_days')
-    .select('id, day_order, name, day_exercises (id, exercise_order, exercise_name, muscle_group, sets, rep_range_min, rep_range_max, target_rir)')
+    .select('id, day_order, name, day_exercises (id, exercise_order, exercise_name, muscle_group, kind, sets, rep_range_min, rep_range_max, target_rir)')
     .eq('program_id', programRow.id)
     .eq('is_active', true)
     .order('day_order', { ascending: true });
@@ -182,6 +199,7 @@ async function fetchActiveProgramFromNetwork(userId: string): Promise<ActiveProg
         exerciseOrder: exercise.exercise_order,
         exerciseName: exercise.exercise_name,
         muscleGroup: exercise.muscle_group,
+        kind: exercise.kind,
         sets: exercise.sets,
         repRangeMin: exercise.rep_range_min,
         repRangeMax: exercise.rep_range_max,

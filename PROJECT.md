@@ -56,6 +56,21 @@ sync-status-indicator. Zie de aparte aannames-sectie voor de details en een
 belangrijke kanttekening bij hoe dit in dit sandbox-environment geverifieerd
 kon worden (geen live backend, geen echt toestel).
 
+**Extra (na Fase 1), stap 5: moderne app-uitstraling + streeffysiek-onboarding.**
+Twee samenhangende UI/UX-verbeteringen, geen wijziging aan de
+progressie-/generator-/planner-engines zelf. (1) Een consistent
+designsysteem (spacing/radii/typografie-tokens, herbruikbare Card/Button/
+SelectableCard/StatTile/ProgressDots-componenten, een zelfgebouwde SVG-
+icoonset) toegepast op vier hoofdtabs — Vandaag, Schema (nieuw: dagen/
+oefeningen bekijken én aanpassen), Progressie (nieuw: kerncijfers-dashboard +
+per-oefening grafieken + aanpassingstijdlijn) en Profiel (nieuw: alles
+bewerkbaar + lichaamsmetingen over tijd). (2) Een uitgebreide onboarding die
+eerst een streeffysiek laat kiezen (mapt 1:1 op het bestaande
+`Goal`-domeintype) en daarna basismetingen (gewicht, lengte, vetpercentage,
+geslacht, geboortejaar, streefgewicht, live BMI) vastlegt als tijdreeks. Zie
+de aannames-sectie verderop voor de details en open punten (placeholder-
+silhouetten, de gekozen streak-definitie, de scope van schema-bewerken).
+
 ## Architectuurkeuzes gemaakt in deze sessie
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
@@ -512,10 +527,74 @@ Nog open voor Fase 2:
   typisch niet midden in een trainingssessie in de sportschool gebeuren,
   in tegenstelling tot het loggen van sets/cardio.
 
+### Aannames bij stap 5 (moderne uitstraling + streeffysiek-onboarding)
+
+- **Streeffysiek→doel-mapping op één plek**: `src/lib/physique.ts` is de
+  enige plek waar een streeffysiek-optie aan een `Goal` gekoppeld wordt
+  (`PHYSIQUE_OPTIONS` + `goalForPhysique`). Onboarding én het profiel-
+  bewerkscherm lezen allebei uit deze lijst, zodat fysiek en doel nooit uit
+  elkaar kunnen lopen. Wijzigt een gebruiker later zijn streeffysiek in het
+  Profiel-tabblad, dan wordt `profiles.goal` meteen mee-geüpdatet — dat
+  beïnvloedt alleen toekomstige generatie/advies, een bestaand programma
+  wordt niet met terugwerkende kracht herschreven.
+- **Placeholder-illustraties, bewust gemarkeerd**: de streeffysiek-picker
+  gebruikt een zelfgebouwde, abstracte SVG-silhouet (`PhysiqueSilhouette` in
+  `src/components/icons.tsx`) — geen foto's van echte mensen, conform de
+  opdracht. Dit zijn expliciet placeholders; vervang `PhysiqueSilhouette`
+  door de definitieve illustraties zodra die er zijn (één component, dus één
+  plek om te vervangen).
+- **Geen nieuwe icoon-dependency**: `@expo/vector-icons` bleek niet
+  geïnstalleerd (niet in `package.json`, niet in `node_modules`). In plaats
+  van een nieuwe dependency toe te voegen is er een klein, dependency-vrij
+  SVG-icoonsetje gebouwd (`src/components/icons.tsx`, alleen
+  `react-native-svg`, dat al gebruikt werd voor de historiegrafiek) — zelfde
+  aanpak als de bestaande lijngrafiek.
+- **Lichaamsmetingen als tijdreeks, niet als profielveld**: `body_measurements`
+  is een aparte tabel (migratie 0003) met één rij per meting; `profiles`
+  bevat geen `weight_kg`-kolom. BMI wordt altijd berekend
+  (`src/lib/bmi.ts`), nooit opgeslagen.
+- **Schema-tab: bewerken, geen vrije schema-builder-from-scratch**: de
+  Schema-tab laat sets/reps/RIR aanpassen, een oefening vervangen (beperkt
+  tot dezelfde spiergroep + het beschikbare materiaal, via de nieuwe pure
+  `candidateExercisesForMuscleGroup`-functie in `@fitness/program-generator`)
+  en de volgorde wisselen (omhoog/omlaag-knoppen — geen drag-and-drop, om
+  geen nieuwe dependency te hoeven toevoegen). Een dag verwijderen deactiveert
+  hem (`program_days.is_active = false`), exact hetzelfde mechanisme als de
+  wekelijkse adaptatieplanner al gebruikte, zodat trainingshistorie nooit
+  verloren gaat en de planner op de rest blijft werken. Een dag toevoegen
+  heractiveert bij voorkeur een eerder verwijderde dag; is die er niet, dan
+  wordt een nieuwe dag aangemaakt als kopie van een bestaande dag (zelfde
+  oefeningen, daarna zelf aan te passen). Dit is dus geen "van nul een
+  programma samenstellen"-builder — dat blijft de intake-flow.
+- **Schema- en profiel-bewerkingen zijn online-only**: net als
+  onboarding/week-review gaan deze mutaties niet door de offline-wachtrij
+  (bewuste afbakening, zelfde redenering als eerder gedocumenteerd — dit zijn
+  incidentele acties, geen sportschool-in-het-moment-logging). De Schema-tab
+  haalt zijn data daarom ook niet via `fetchWithCache` op: bewerken moet
+  altijd van de meest recente stand uitgaan.
+- **"Langste streak"-definitie**: gedefinieerd als het langste aantal
+  opeenvolgende 7-dagen-blokken (vanaf Unix-epoch geteld, niet per se
+  kalenderweek-Maandag-gebonden) met minstens één workout, in
+  `src/lib/progressStats.ts`. Gekozen omdat dit aansluit bij hoe de rest van
+  de app al in "trainingsweken" denkt (`current_week_number`), in plaats van
+  een dagelijkse streak die voor een 3×/week-schema vrijwel nooit lang zou
+  standhouden.
+- **"Volume deze week"**: som van `gewicht_kg × reps` over alle sets in de
+  laatste 7 dagen — een rollend venster, geen kalenderweek.
+- **Kon niet end-to-end getest worden**: zoals bij eerdere stappen was er in
+  deze sandbox geen live Supabase-project en geen echt toestel beschikbaar.
+  Geverifieerd: `npm run typecheck` (schoon), `npm run test` (75 tests,
+  alle packages), een productie-`expo export --platform web`-bundle, en een
+  headless Playwright-smoketest op de ingelogde bundel (geen console-errors).
+  Niet geverifieerd: de daadwerkelijke onboarding- en schema-bewerkflows
+  tegen een echte database.
+
 ## Niet gebouwd (bewust, voor latere fases)
 
-Wearables, voeding, social features, AI-chat, eigen-schema-builder,
-meertaligheid — zoals in de opdracht vermeld, hier niet aangeraakt.
+Wearables, voeding, social features, AI-chat, een vrije van-nul-af-aan
+schema-builder (zie hierboven — bewerken van een bestaand gegenereerd
+schema is er wel), meertaligheid — zoals in de opdracht vermeld, hier niet
+aangeraakt.
 
 ## Projectstructuur
 
@@ -525,10 +604,13 @@ app/                        Expo Router routes
   (auth)/
     index.tsx                 Login/registreren (e-mail + wachtwoord, één scherm met toggle)
   (onboarding)/
-    index.tsx                  Intake-wizard: doel, ervaring, dagen/week, materiaal, review
+    index.tsx                  Intake-wizard: streeffysiek, basismetingen (+BMI), voorkeuren, samenvatting
   (tabs)/
-    _layout.tsx                Tab navigator
+    _layout.tsx                Tab navigator: Vandaag / Schema / Progressie / Profiel
     index.tsx                   "Vandaag": eerstvolgend dagschema + "Start workout"
+    schema.tsx                  "Schema": dagen/oefeningen bekijken, bewerken, vervangen, herordenen, toevoegen/verwijderen
+    progress.tsx                 "Progressie": kerncijfers, per-oefening links, aanpassingstijdlijn-preview
+    profile.tsx                  "Profiel": profielgegevens + lichaamsmetingen bewerken, uitloggen
   workout/
     [dayId].tsx                 Workout-invoer: StrengthLogger + CardioLogger, offline-first
   history/
@@ -538,11 +620,20 @@ app/                        Expo Router routes
 src/
   components/
     SyncStatusBadge.tsx        Offline / N niet gesynchroniseerd / Gesynchroniseerd — workout + Vandaag
+    Card.tsx / Button.tsx / SelectableCard.tsx / EmptyState.tsx / ProgressDots.tsx / StatTile.tsx
+                                 Designsysteem-componenten, gedeeld door alle vier de tabs + onboarding
+    LineChart.tsx                Herbruikbare SVG-lijngrafiek (uit historiescherm getrokken; ook gebruikt in Profiel)
+    icons.tsx                    Dependency-vrije SVG-icoonset (tab-iconen + PhysiqueSilhouette-placeholder)
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
     auth.tsx                   AuthProvider + useAuth hook
-    profile.tsx                ProfileProvider + useProfile hook (profiles-rij van huidige user)
+    profile.tsx                ProfileProvider + useProfile hook + updateProfile() (profiles-rij van huidige user)
+    physique.ts                 PHYSIQUE_OPTIONS + goalForPhysique() — enige plek voor streeffysiek→doel
+    bmi.ts                       calculateBmi() / bmiCategory() — pure berekening, nooit opgeslagen
+    measurements.ts              saveMeasurement() / fetchMeasurementHistory() — body_measurements-tijdreeks
     programs.ts                saveGeneratedProgram / fetchActiveProgram / fetchProgramDayWithExercises
+    schemaEditor.ts              fetchSchemaProgram + updateExerciseSets/replaceExercise/swapExerciseOrder/addDay/removeDay
+    progressStats.ts             fetchWeeklyVolume / fetchMonthlyWorkoutCount / fetchLongestStreak
     offlineQueue.ts             FIFO sync-wachtrij (AsyncStorage), idempotente upserts, subscribeToQueue
     offlineCache.ts              fetchWithCache() — network-first leescache, fallback bij netwerkfout
     useSyncStatus.ts             Hook: wachtrijlengte (live) + NetInfo online/offline
@@ -553,7 +644,9 @@ src/
     adjustmentLabels.ts          Gedeelde Nederlandse labels per AdjustmentType (week-review + geschiedenis)
     dates.ts                     formatShortDate() — gedeeld door workout-, historie- en geschiedenisscherm
   theme/
-    colors.ts                  Donker kleurenpalet
+    colors.ts                  Donker kleurenpalet (uitgebreid met surfaceElevated/warning/muted-varianten)
+    spacing.ts / radii.ts / typography.ts
+                                 Gedeelde spacing-, radius- en typografieschaal
 packages/
   progression-engine/         Pure, framework-onafhankelijke progressielogica
     src/
@@ -566,12 +659,13 @@ packages/
   program-generator/          Pure, framework-onafhankelijke programma-generator
     src/
       types.ts
-      exercises.ts               Movement slots × equipment-varianten
+      exercises.ts               Movement slots × equipment-varianten + candidateExercisesForMuscleGroup()
       repSchemes.ts               Sets/reps/RIR per doel + ervaring
       templates.ts                Dag-archetypes + templatekeuze (full body / upper-lower)
       generate.ts                 generateProgram(intake) -> GeneratedProgram
     tests/
       generate.test.ts
+      exercises.test.ts
   adaptation-planner/         Pure, framework-onafhankelijke wekelijkse adaptatieplanner
     src/
       types.ts
@@ -588,6 +682,8 @@ supabase/
   migrations/
     0001_init.sql              Volledig Fase 1-datamodel + RLS
     0002_adaptation_planner.sql  Weekteller, is_active op program_days, week_number/is_deload + insert-policy
+    0003_physique_and_measurements.sql
+                                 target_physique/gender/birth_year/target_weight_kg op profiles + body_measurements-tabel
 ```
 
 ## Hoe te draaien
@@ -595,7 +691,7 @@ supabase/
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages samen (68 tests)
+npm run test           # unit tests, alle packages samen (75 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```
