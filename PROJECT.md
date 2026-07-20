@@ -19,7 +19,14 @@ gaat. Daarom is de bouwvolgorde bewust: eerst de progressie-engines (het
 Fase 1 is hiermee compleet. Stap 1 en 2 kwamen uit een eerdere sessie, stap 3
 uit de sessie daarna (de vorige poging tot stap 3 liep tegen een fout aan
 voordat er iets gecommit was, en is toen opnieuw opgebouwd), stap 4 uit de
-sessie erna. Deze sessie voegde stap 5 en 6 toe.
+sessie erna, stap 5 en 6 uit de sessie daarna.
+
+**Extra (na Fase 1): cardio-engine (80/20 polarized).** Los van de 6
+genummerde stappen is de kracht-only aanpak van stap 4-6 uitgebreid naar
+cardio: een eigen polarized-trainingsalgoritme (zie hieronder), cardio-invoer
+in het workout-scherm, en cardio in het historiescherm. Zie de aparte
+aannames-sectie verderop voor de details en het belangrijkste open punt (nog
+niet bereikbaar via de normale intake-flow).
 
 ## Architectuurkeuzes gemaakt in deze sessie
 
@@ -119,6 +126,46 @@ sessie erna. Deze sessie voegde stap 5 en 6 toe.
   oefeningnaam in het workout-scherm; de oefeningnaam wordt als route-param
   meegegeven zodat de historieschermen geen extra query nodig hebben om de
   titel te tonen.
+- **Cardio-engine herschreven** (`packages/progression-engine/src/cardio.ts`):
+  drie functies i.p.v. de oude, samengevoegde `getCardioDistributionAdvice`/
+  `getZone2Advice`/`getIntervalAdvice` (nergens buiten deze package gebruikt,
+  dus veilig vervangen i.p.v. ernaast te houden):
+  - `computeWeeklyDistribution(logs, windowDays, referenceDate)` — minuten
+    laag/hoog + %intensief over een venster. `referenceDate` is een derde,
+    optioneel argument (default `new Date()`): puur/testbaar blijven zonder
+    de klok te lezen betekende dat het venster niet zomaar "nu - N dagen"
+    kon zijn zonder een expliciete tijdreferentie; tests geven een vaste
+    datum mee, de UI laat hem gewoon weg.
+  - `adviseNextCardioType(distribution, goal)` — zone2 of interval, met een
+    doel-afhankelijke streefverhouding (zie aannames).
+  - `adviseCardioProgression(lastSessions, type, goal)` — dispatcht naar
+    zone2- of intervalprogressie en leidt "huidige duur"/"huidige rondes"
+    volledig af uit de sessiegeschiedenis (geen losse config-parameter meer
+    nodig zoals de oude `Zone2ProgressionConfig`/`IntervalProgressionConfig`).
+- **Cardio-invoer in het workout-scherm**: `app/workout/[dayId].tsx` is
+  gesplitst in twee losstaande subcomponenten, `StrengthLogger` en
+  `CardioLogger`, elk met eigen state/effects en gemount met `key={exercise.id}`
+  zodat een wissel van oefening een schone remount geeft in plaats van een
+  handmatige "reset bij exercise-wissel"-effect (was voorheen nodig, nu niet
+  meer). `CardioLogger` haalt de cardio-historie op, berekent
+  `computeWeeklyDistribution` + `adviseNextCardioType` (welk type vandaag)
+  en vervolgens `adviseCardioProgression` voor dát type, en toont beide
+  uitleg-strings plus het concrete voorstel (duur, of rondes + tempo-
+  aanwijzing) in één advieskaart — precies zoals de opdracht het voorbeeld
+  gaf ("Vandaag zone 2, 35 min — ..."). De invoervelden (duur/RPE/hartslag/
+  afstand voor zone2; rondes/duur/RPE/hartslag voor interval) volgen het
+  aanbevolen type; er is geen handmatige type-keuze.
+- **`src/lib/history.ts` uitgebreid met `fetchCardioHistory`**: zelfde
+  twee-staps-query-patroon als `fetchExerciseHistory` (cardio_logs heeft geen
+  eigen datumkolom, leent `performed_at` van de bijbehorende workout). Het
+  resultaat is getypeerd als `CardioLog[]` zodat het rechtstreeks de
+  progressie-engine-functies in kan, zonder tussenlaag.
+- **Historiescherm generiek gemaakt**: de vroegere `WeightChart` is
+  omgedoopt tot een generieke `LineChart` (punten + eenheid-string) en wordt
+  nu hergebruikt voor kracht (gewicht), cardio-duur, én — als er hartslagdata
+  is — hartslag per sessie over tijd. Het scherm weet via een `kind`
+  route-param (meegegeven vanuit het workout-scherm) welke databron en welke
+  weergave het moet gebruiken.
 
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
@@ -130,18 +177,11 @@ zodat ze makkelijk terug te vinden en aan te passen zijn:
   één set* onder `repRangeMin`. Twee sessies op rij met zo'n set → -10% gewicht.
 - **Kracht — gewicht afronden**: naar het dichtstbijzijnde veelvoud van 1.25 kg
   (standaard schijfgewicht), instelbaar per oefening via `weightIncrementKg`.
-- **Cardio — zone 2 stapgrootte**: 7.5% (het midden van de gevraagde 5–10%-marge)
-  per week, mits RPE en hartslag normaal blijven.
-- **Cardio — deload**: elke 4e week (`weekInCycle >= cycleLengthWeeks`, default
-  cyclus van 4 = 3 weken opbouw + 1 week terug) gaat de zone 2-duur 20% omlaag.
-  De opdracht noemt geen exact deload-percentage; 20% is gekozen als
-  conservatieve default.
-- **Cardio — 80/20 verdeling**: de functie neemt aan dat de aanroeper al een
-  venster van 7–14 dagen aan logs doorgeeft; de functie zelf filtert niet op
-  datum (blijft zo een pure functie zonder kloktijd-afhankelijkheid).
-- **Interval-progressie**: rondes gaan eerst omhoog tot een ingestelde
-  `maxRoundsBeforeTempoIncrease`, daarna pas het tempo-niveau. Er is geen reset
-  van rondes bij tempo-verhoging verondersteld (opdracht specificeert dit niet).
+- **Cardio — deload**: elke 4e zone2-sessie (3 opbouwen + 1 terug) gaat de
+  duur 20% omlaag, ongeacht RPE/hartslag. De opdracht noemt geen exact
+  deload-percentage; 20% is gekozen als conservatieve default. (De volledige
+  cardio-progressie is later in Fase 1 herzien — zie de aparte
+  cardio-engine-sectie hieronder voor de huidige, uitgebreidere aannames.)
 
 Toegevoegd in stap 3 (`packages/program-generator/src/repSchemes.ts`,
 `templates.ts`, `exercises.ts`):
@@ -186,26 +226,79 @@ Toegevoegd in stap 5+6 (`src/lib/history.ts`, `app/workout/[dayId].tsx`,
   historie zou een database-view of RPC dat werk naar de server kunnen
   verplaatsen.
 
+Toegevoegd bij de cardio-engine (`packages/progression-engine/src/cardio.ts`,
+`app/workout/[dayId].tsx`, `app/history/[dayExerciseId].tsx`):
+- **Doel-afhankelijke streefverhouding, stapgrootte en rondes-plafond**: 80/20
+  is het fysiologische uitgangspunt, maar cardio speelt een andere rol per
+  doel. Drie tabellen in `cardio.ts` maken dat concreet:
+  - Streef-% zone2: 80% voor hypertrophy/endurance/mixed, 85% voor strength
+    (behoudender, cardio mag herstel voor het tillen niet in de weg zitten),
+    70% voor fat_loss (iets meer intensiteit toegestaan voor de extra
+    calorieverbranding, zonder het polarized-principe los te laten).
+  - Zone2-stapgrootte per sessie: 10% voor endurance (max van de gevraagde
+    5–10%-marge), 8.5% fat_loss, 7.5% mixed, 5% hypertrophy/strength
+    (voorzichtiger omdat cardio daar bijzaak is, niet de hoofdmoot).
+  - Max. rondes vóór tempo-verhoging: 10 (endurance) tot 5 (strength).
+  Dit zijn expliciete keuzes, geen instelbare velden — makkelijk terug te
+  vinden en aan te passen in `cardio.ts` als de aannames niet kloppen.
+- **Tempo-niveau wordt afgeleid, niet gelogd**: het datamodel heeft geen
+  tempo/pace-kolom (de opdracht noemt die ook niet). `adviseCardioProgression`
+  leidt het tempo-niveau af uit de rondes-geschiedenis: elke keer dat het
+  aantal rondes vlak na het bereiken van het plafond weer terugvalt, wordt dat
+  gelezen als "hier is een tempo-verhoging doorgevoerd" (rondes resetten naar
+  de startwaarde om op het nieuwe tempo weer op te bouwen). De gebruiker voert
+  het hogere tempo zelf uit op basis van de uitleg-tekst; er wordt geen aparte
+  pace-waarde gelogd.
+- **Venstervenster verankerd op een expliciete referentiedatum, niet de klok**:
+  `computeWeeklyDistribution(logs, windowDays, referenceDate)` blijft een pure
+  functie door `referenceDate` als (optioneel, default `new Date()`) argument
+  te nemen in plaats van intern `Date.now()` te lezen — units geven een vaste
+  datum mee, de UI laat het argument gewoon weg. Venstergrootte: 10 dagen
+  (midden van de gevraagde 7–14 dagen-marge).
+- **Eén cardio-"slot", dynamisch type per sessie**: `day_exercises.kind` kent
+  zowel `cardio_duration` als `cardio_interval`, maar de UI behandelt elke
+  cardio-oefening als één generieke cardio-slot: welk sessietype je die dag
+  daadwerkelijk doet (zone2 of interval) wordt élke keer opnieuw door
+  `adviseNextCardioType` bepaald op basis van de weekverdeling, niet
+  vastgezet door de `kind`-waarde van de oefening. Die twee kind-waarden
+  blijven in het schema staan voor een toekomstige weekplanner die mogelijk
+  wél vaste cardio-typen per dag wil inplannen.
+- **Eén sessie per cardio-oefening per workout**: in tegenstelling tot kracht
+  (meerdere sets per oefening) log je cardio als één geheel (duur, RPE,
+  eventueel hartslag/afstand/rondes). Na het loggen toont het scherm een
+  samenvatting in plaats van een "volgende set"-knop.
+  - **Geschatte totale duur bij intervallen**: er is geen apart invoerveld
+    voor warm-up/cooldown, dus de duur-stepper wordt voorgevuld met
+    `rondes × 7 minuten` (4 min hard + 3 min rustig per Noorse-4×4-ronde) als
+    grove schatting; de gebruiker past het aan naar de werkelijke duur.
+
 Nog open voor Fase 2 (Fase 1 is met stap 1 t/m 6 compleet; dit blijft relevant
 zodra therapietrouw, cardio-programmering en verdere adaptatie aan bod komen):
 - **Bodyweight-progressie**: de kracht-progressie-engine werkt op gewicht;
   voor pure bodyweight-oefeningen (waar gewicht vaak 0 kg is) geeft dat geen
   zinvolle progressie. Nog te ontwerpen: repetitie-gebaseerde progressie of
   toegevoegd-gewicht-tracking voor die categorie.
-- **Cardio-invoer in het workout-scherm**: de UI heeft al een tak voor
-  `kind !== 'strength'`, maar toont nu alleen een placeholder-tekst in plaats
-  van een duur-/RPE-/hartslag-invoer. Niet blokkerend zolang de generator nog
-  geen cardio-oefeningen in programma's zet (zie volgende punt).
+- **Cardio-oefeningen komen nog niet uit de generator**: de cardio-invoer,
+  het advies en de historie zijn nu volledig gebouwd en getest, maar
+  `@fitness/program-generator` zet nog geen cardio-`day_exercises` in
+  gegenereerde programma's (bewust buiten scope gehouden — zie de
+  weekplanner hieronder). Dat betekent dat een gebruiker die via de normale
+  intake een programma laat genereren, in de praktijk nooit een cardio-slot
+  in "Vandaag" ziet totdat de generator dat ook daadwerkelijk aanmaakt. Om
+  deze functionaliteit te kunnen proberen is voorlopig een handmatig
+  aangemaakte `day_exercises`-rij met `kind = 'cardio_duration'` of
+  `'cardio_interval'` nodig.
 - Hoe therapietrouw ("sessies overgeslagen") precies wordt gemeten (aantal
   gemiste sessies per periode?) voordat het schema wordt verkleind.
 - Hoe de interference-check (cardio niet vlak vóór zware krachtdag) precies
   wordt ingebouwd in de weekplanner-output — de generator bouwt nog geen
   cardio-dagen/blokken in programma's; dat volgt zodra de interference-regel
-  is uitgewerkt.
+  is uitgewerkt en cardio-oefeningen daadwerkelijk gegenereerd worden.
 - `program_adjustments` (de tabel voor server-side adaptatiebeslissingen) is
   in het datamodel aanwezig sinds stap 1, maar er is nog geen scheduled
-  job/edge function die hem vult — de progressie-engine draait nu alleen
-  client-side, per keer dat de gebruiker het workout-scherm opent.
+  job/edge function die hem vult — de progressie-engines (kracht én cardio)
+  draaien nu alleen client-side, per keer dat de gebruiker het workout-scherm
+  opent.
 
 ## Niet gebouwd (bewust, voor latere fases)
 
@@ -225,18 +318,18 @@ app/                        Expo Router routes
     _layout.tsx                Tab navigator
     index.tsx                   "Vandaag": eerstvolgend dagschema + "Start workout"
   workout/
-    [dayId].tsx                 Workout-invoer: advies-kaart, stepper-UI per oefening, offline-first
+    [dayId].tsx                 Workout-invoer: StrengthLogger + CardioLogger, offline-first
   history/
-    [dayExerciseId].tsx         Historie per oefening: lijngrafiek + lijst per sessie
+    [dayExerciseId].tsx         Historie per oefening (kracht of cardio): lijngrafiek(en) + lijst per sessie
 src/
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
     auth.tsx                   AuthProvider + useAuth hook
     profile.tsx                ProfileProvider + useProfile hook (profiles-rij van huidige user)
     programs.ts                saveGeneratedProgram / fetchActiveProgram / fetchProgramDayWithExercises
-    offlineQueue.ts             FIFO sync-wachtrij (AsyncStorage) met idempotente upserts
+    offlineQueue.ts             FIFO sync-wachtrij (AsyncStorage) met idempotente upserts, incl. log_cardio
     id.ts                       generateId() — client-side UUID's voor offline-veilige writes
-    history.ts                  fetchExerciseHistory() — gedeeld door advies (stap 5) en historie (stap 6)
+    history.ts                  fetchExerciseHistory() + fetchCardioHistory() — gedeeld door advies en historie
   theme/
     colors.ts                  Donker kleurenpalet
 packages/
@@ -244,7 +337,7 @@ packages/
     src/
       types.ts
       strength.ts               Double progression met RIR
-      cardio.ts                 Polarized 80/20 + zone2/interval progressie
+      cardio.ts                 Polarized 80/20: computeWeeklyDistribution / adviseNextCardioType / adviseCardioProgression
     tests/
       strength.test.ts
       cardio.test.ts
@@ -267,7 +360,7 @@ supabase/
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests progressie-engine + program-generator (38 tests)
+npm run test           # unit tests progressie-engine + program-generator (44 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```
