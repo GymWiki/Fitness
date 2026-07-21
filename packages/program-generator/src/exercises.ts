@@ -128,6 +128,14 @@ export const MOVEMENT_SLOTS: Record<string, MovementSlot> = {
 };
 
 /**
+ * Every distinct muscle group used across the movement slots — the single
+ * source of truth for "which muscle groups exist" for anything that needs
+ * the full list (e.g. the body-diagram dashboard), instead of hand-copying
+ * a second, driftable list elsewhere.
+ */
+export const ALL_MUSCLE_GROUPS: string[] = [...new Set(Object.values(MOVEMENT_SLOTS).map((slot) => slot.muscleGroup))];
+
+/**
  * Candidate exercise names a user could swap into a schema slot: every A/B
  * variant, across every movement slot, that targets the same muscle group
  * and is available with the given equipment — minus whatever's already
