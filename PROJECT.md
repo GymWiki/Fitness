@@ -267,6 +267,68 @@ slagen", omdat die tests precies de bug vastlegden die nu gefixed is. Eén
 nieuwe test in `distribute.test.ts` bevestigt de interferentie-bescherming
 voor mix-cardio zonder `distribute.ts` te wijzigen.
 
+**Bugfix (na de cardio-fix hierboven): `null value in column
+"progression_rule"` bij schemawissel.**
+
+*Diagnose.* Exacte foutmelding: `Nieuw programma aanmaken: null value in
+column "progression_rule" of relation "day_exercises" violates not-null
+constraint (23502)` — dat prefix komt letterlijk uit `switchGoal.ts`'s
+`withStage('Nieuw programma aanmaken', () => insertProgramStructure(...))`,
+dus de fout zat gegarandeerd in `insertProgramStructure`. Root cause:
+`day_exercises.progression_rule` is `NOT NULL` met
+`default '{}'::jsonb`, maar `insertProgramStructure` bouwde vóór deze fix
+één array met zowel kracht- als cardio-rijen en gaf alleen de kracht-rijen
+een `progression_rule` mee (cardio-rijen kregen die sleutel helemaal niet
+— logisch, want ze hadden in plaats daarvan `cardio_config`, en de
+kolom heeft toch een default). Het probleem: bij een bulk-insert met een
+array van objecten met **verschillende sleutels per rij** vult
+PostgREST/Postgres (via `json_to_recordset`-achtige verwerking) de
+ontbrekende sleutel voor de rijen die hem missen op met een expliciete
+`NULL` — niet met de kolom-default. Een uniforme array (elke rij mist
+dezelfde sleutel, zoals in `schemaEditor.ts`'s `addDay`, dat
+`progression_rule` sowieso nooit meegaf) loopt hier niet tegenaan, omdat de
+kolom dan gewoon buiten de gegenereerde INSERT valt en de default normaal
+toepast. Dit verklaart ook waarom de fout er pas kwam nadat de vorige
+cardio-fix cardio-rijen aan dezelfde insert-batch toevoegde: vóór die fix
+was er geen mix van rij-vormen om het probleem te triggeren. Bevestigd via
+statische code-analyse (2 insert-plekken in totaal in de hele repo:
+`programs.ts` en `schemaEditor.ts`) en een test die de exacte
+Postgres-foutcode simuleert.
+
+*Fix.* Nieuwe, centrale `defaultProgressionRuleFor()` in `src/lib/programs.ts`
+— de enige plek die een geldige `progression_rule` bouwt, voor zowel
+kracht (`{ weightIncrementKg }`, ongewijzigde vorm) als cardio
+(`{ type: 'polarized', sessionType }`, nieuw — een klein, betekenisvol
+configuratie-object in plaats van een lege placeholder). Beide rij-soorten
+in `insertProgramStructure` roepen deze nu aan, dus élke rij in de array
+heeft altijd dezelfde sleutels. Extra verdedigingslaag:
+`assertProgressionRules()` gooit vóór de insert een duidelijke, Nederlandse
+fout ("Interne fout: oefening ... heeft geen progression_rule...") als een
+rij hem toch mist — voorkomt dat een toekomstige regressie weer als een
+rauwe Postgres-constraint-fout naar de gebruiker lekt. `schemaEditor.ts`'s
+`addDay` (de andere, niet-bugged maar eveneens relevante insert-plek) is
+voor consistentie ook expliciet gemaakt: zet nu letterlijk
+`progression_rule: {}` (matcht de DB-default) in plaats van de sleutel
+stilzwijgend weg te laten, en loopt door dezelfde `assertProgressionRules()`.
+De NOT NULL-constraint zelf blijft ongewijzigd op de database — de fix zit
+uitsluitend in de applicatiecode.
+
+*Tests.* Nieuw `src/lib/programs.test.ts` (zelfde hand-rolled
+Supabase-mock-patroon als `switchGoal.test.ts`), met een mock voor de
+`day_exercises`-tabel die de echte NOT NULL-constraint nabootst (retourneert
+een `23502`-fout als een rij `progression_rule` mist) — dus de tests
+reproduceren daadwerkelijk het faalscenario in plaats van het alleen te
+omzeilen. Voor elk doel (hypertrophy/strength/endurance/fat_loss/mixed):
+`insertProgramStructure` slaagt en elke geïnserte rij (kracht én cardio)
+heeft een gedefinieerde, niet-`null` `progression_rule`. Losse unit-tests
+voor `defaultProgressionRuleFor()` (juiste vorm per type) en
+`assertProgressionRules()` (gooit bij een ontbrekende rij, gooit niet als
+alles compleet is). `switchGoal.test.ts` kreeg een nieuwe test die specifiek
+wisselt naar `balanced_general` (doel `mixed`, dus zowel kracht- als
+cardio-rijen in dezelfde batch — exact het scenario dat de bug
+veroorzaakte) en bevestigt dat de wissel slaagt en alle rijen een
+`progression_rule` hebben.
+
 ## Architectuurkeuzes gemaakt in deze sessie
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
