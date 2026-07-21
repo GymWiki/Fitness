@@ -435,6 +435,74 @@ custom threshold, macro-schaling inclusief afronding). 6 nieuwe tests voor
 exact-op-de-grens, custom interval, en een simulatie van snel typen die
 aantoont dat niet elke toetsaanslag een zoekopdracht triggert).
 
+**Extra (na Fase 1), stap 11: lichaamsdiagram met herstelstatus per
+spiergroep op Vandaag.**
+
+Bouwt bovenop de al bestaande, al eerder gebouwde `estimateRecoveryState()`
+(stap 9) — deze stap voegt uitsluitend een visuele laag toe, geen nieuwe
+herstel-logica.
+
+*Doorbraak-inzicht: geen nieuwe berekeningen nodig, alleen een kleur- en
+regio-mapping.* `RecoveryEstimate` gaf al `status`, `hoursSinceSession`,
+`windowStartHours`, `windowEndHours` en `explanation` — genoeg om een
+vloeiende kleurovergang en een tik-uitleg te bouwen zonder de pure functie
+zelf aan te raken. Twee nieuwe pure, geteste modules in `src/lib`:
+- `recoveryColor.ts`: interpoleert tussen bestaande design-tokens
+  (`colors.danger` → `colors.warning` → `colors.accent` → `colors.warning`
+  → `colors.textTertiary`) op basis van hoe ver een spiergroep door zijn
+  venster is — rood vlak na een sessie, oranje bij het naderen van het
+  venster, groen op de piek (klaar), geleidelijk terug naar oranje bij het
+  sluiten van het venster, grijs erna. Dit volgt de vorm van de
+  supercompensatie-curve zelf (vermoeidheid → herstel → piek → afvlakking)
+  in plaats van een simpel stoplicht met 5 vlakke kleuren, zoals gevraagd.
+  Status blijft altijd ook als tekst zichtbaar (zie
+  `STATUS_LABEL`/`STATUS_COLOR`, verplaatst naar het nieuwe, React
+  Native-vrije `recoveryLabels.ts` zodat zowel `RecoveryIndicator.tsx` als
+  pure `src/lib`-modules dezelfde bron gebruiken — een `.tsx`-component
+  importeren vanuit `src/lib` bleek Vitest te breken, omdat dat
+  react-native's ongetranspileerde Flow-syntax meetrekt).
+- `bodyDiagramRegions.ts`: SVG-regiogeometrie (rects/circles op een
+  `viewBox 0 0 200 420`) voor alle 10 spiergroepen, plus een pure
+  `describeRegionTap()`-formatter voor de tik-kaart-inhoud. De
+  voor-/achterkant-verdeling volgt letterlijk het voorbeeld uit de
+  opdracht (borst/buik/quadriceps vooraan; rug/hamstrings/kuiten achteraan)
+  en is getest tegen de nieuwe `ALL_MUSCLE_GROUPS`-export uit
+  `@fitness/program-generator` (afgeleid van `MOVEMENT_SLOTS`, dus kan
+  nooit stilzwijgend uit de pas lopen als er ooit een spiergroep bijkomt).
+  Twee spiergroep-namen in het datamodel overlappen anatomisch
+  (`Bilspieren/Hamstrings` van de hinge-beweging vs. losse `Hamstrings` van
+  de isolatie-oefening) — bewust niet samengevoegd tot één regio (dat zou
+  nieuwe logica vereisen om twee herstelstatussen tot één kleur te
+  combineren), maar als twee aangrenzende, apart aantikbare vlakken op de
+  achterkant.
+- `BodyDiagram.tsx`: een generiek, sekseneutraal silhouet
+  (react-native-svg, geen nieuwe dependency) met de 10 regio's erbovenop,
+  voorkant-/achterkant-toggle, tekst-legenda (kleur is nooit de enige
+  informatiedrager) en een tik-kaart met spiergroep, statuslabel,
+  actuele uitleg-tekst en een link naar de FAQ — bewust een placeholder-
+  kwaliteit illustratie (rects/circles, geen anatomisch gebeeldhouwde
+  paths), net als de eerdere `PhysiqueSilhouette`, met ruimte voor een
+  mooiere illustratie later.
+- `fetchAllMuscleGroupRecoveryEstimates()` (nieuw in `src/lib/recovery.ts`)
+  haalt een schatting op voor alle 10 spiergroepen (niet alleen die van
+  vandaag's dag, zoals de bestaande `recoveryByMuscleGroup`-state al deed)
+  — onafhankelijk, fail-soft opgehaald zodat een storing hier nooit de rest
+  van Vandaag blokkeert, zelfde patroon als de andere "nice-to-have"-secties
+  op dat scherm.
+
+*Tests.* 20 nieuwe tests: `recoveryColor.test.ts` (elke status geeft de
+juiste kleur, inclusief de vloeiende overgangen binnen 'recovering' en
+'window_closing' — nooit dezelfde tint tweemaal bij een oplopende
+tijdsduur), `bodyDiagramRegions.test.ts` (elke `ALL_MUSCLE_GROUPS`-waarde
+heeft precies één regio, voor-/achterkant dekken samen alle spiergroepen
+zonder overlap of gat, en `describeRegionTap()` geeft voor elke status het
+juiste label + de actuele uitleg-tekst — dit dekt de "tikken toont de
+juiste uitleg"-eis zonder een React Native-componenttest-harnas nodig te
+hebben, consistent met hoe deze codebase pure logica test in plaats van
+UI). Root `vitest.config.ts` kreeg een `@`-alias-resolutie (mirrorend
+`tsconfig.json`'s `paths`) zodat `src/lib`-tests ook modules met een
+`@/theme/...`-import kunnen laden.
+
 ## Architectuurkeuzes gemaakt in deze sessie
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
@@ -1159,6 +1227,7 @@ src/
     icons.tsx                    Dependency-vrije SVG-icoonset (tab-iconen + PhysiqueSilhouette-placeholder)
     NutrientProgressBar.tsx       Gevulde-balk voortgang voor een dagtotaal (calorieën/macro) t.o.v. doel
     FoodLogForm.tsx                Gedeeld door scan/zoeken/handmatig: hoeveelheid + macro-preview + loggen + favoriet
+    BodyDiagram.tsx                Lichaamsdiagram op Vandaag: voor-/achterkant-toggle, tikbare spiergroep-regio's, legenda, tik-kaart
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
     auth.tsx                   AuthProvider + useAuth hook
@@ -1183,7 +1252,12 @@ src/
     adjustmentHistory.ts         fetchAdjustmentHistory() — alle program_adjustments van het actieve programma
     adjustmentLabels.ts          Gedeelde Nederlandse labels per AdjustmentType (week-review + geschiedenis)
     dates.ts                     formatShortDate() — gedeeld door workout-, historie- en geschiedenisscherm
-    recovery.ts                   fetchRecoveryEstimate() — cross-programma laatste-sessie-lookup + estimateRecoveryState()
+    recovery.ts                   fetchRecoveryEstimate() + fetchAllMuscleGroupRecoveryEstimates() — cross-programma laatste-sessie-lookup + estimateRecoveryState()
+    recoveryLabels.ts              STATUS_LABEL / STATUS_COLOR — React Native-vrij, gedeeld door RecoveryIndicator.tsx en pure src/lib-modules
+    recoveryColor.ts / recoveryColor.test.ts
+                                  recoveryColor() — vloeiende kleurgradiënt voor het lichaamsdiagram, puur op basis van bestaande RecoveryEstimate-velden
+    bodyDiagramRegions.ts / bodyDiagramRegions.test.ts
+                                  Regiogeometrie per spiergroep (voor/achter) + describeRegionTap()
     faqContent.ts                 FAQ_ENTRIES + searchFaqEntries() — gestructureerde, doorzoekbare FAQ-content
     faqContent.test.ts             Controleert dat elke FAQ-entry minstens één bron met geldige url/auteur/jaar heeft
     openFoodFacts.ts               fetchProductByBarcode() (v2) / searchProductsByName() (v1) — read-only OFF-client

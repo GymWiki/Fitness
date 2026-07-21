@@ -1,3 +1,4 @@
+import { ALL_MUSCLE_GROUPS } from '@fitness/program-generator';
 import { estimateRecoveryState, type RecoveryEstimate, type RecoverySessionInput, type RecoverySignals } from '@fitness/progression-engine';
 import { fetchWithCache } from './offlineCache';
 import { supabase } from './supabase';
@@ -78,4 +79,14 @@ export async function fetchRecoveryEstimate(
     fetchLastSessionForMuscleGroup(userId, muscleGroup),
   );
   return estimateRecoveryState(muscleGroup, lastSession, signals);
+}
+
+/**
+ * A `RecoveryEstimate` for every muscle group the generator uses (not just
+ * the ones in today's day) — what the full-body diagram needs, independent
+ * of `fetchRecoveryEstimate`'s single-muscle-group use on the day card.
+ */
+export async function fetchAllMuscleGroupRecoveryEstimates(userId: string): Promise<Map<string, RecoveryEstimate>> {
+  const estimates = await Promise.all(ALL_MUSCLE_GROUPS.map((muscleGroup) => fetchRecoveryEstimate(userId, muscleGroup)));
+  return new Map(ALL_MUSCLE_GROUPS.map((muscleGroup, index) => [muscleGroup, estimates[index]!]));
 }

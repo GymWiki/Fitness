@@ -2,6 +2,7 @@ import type { RecoveryEstimate } from '@fitness/progression-engine';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BodyDiagram } from '@/components/BodyDiagram';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
@@ -12,7 +13,7 @@ import { fetchMeasurementHistory } from '@/lib/measurements';
 import { checkProteinShortfall } from '@/lib/proteinSignal';
 import { fetchActiveProgram, type ActiveProgram } from '@/lib/programs';
 import { useProfile } from '@/lib/profile';
-import { fetchRecoveryEstimate } from '@/lib/recovery';
+import { fetchAllMuscleGroupRecoveryEstimates, fetchRecoveryEstimate } from '@/lib/recovery';
 import { useSyncStatus } from '@/lib/useSyncStatus';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
@@ -33,6 +34,7 @@ export default function TodayScreen() {
   const [program, setProgram] = useState<ActiveProgram | null>(null);
   const [weekReview, setWeekReview] = useState<WeekReview | null>(null);
   const [recoveryByMuscleGroup, setRecoveryByMuscleGroup] = useState<Map<string, RecoveryEstimate>>(new Map());
+  const [bodyDiagramEstimates, setBodyDiagramEstimates] = useState<Map<string, RecoveryEstimate>>(new Map());
   const [hasProteinShortfall, setHasProteinShortfall] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +73,14 @@ export default function TodayScreen() {
       } catch {
         setRecoveryByMuscleGroup(new Map());
       }
+    }
+
+    // Same "nice-to-have, never blocks the rest of the screen" treatment — the full-body
+    // diagram needs every muscle group's estimate, not just today's day (unlike the map above).
+    try {
+      setBodyDiagramEstimates(await fetchAllMuscleGroupRecoveryEstimates(session.user.id));
+    } catch {
+      setBodyDiagramEstimates(new Map());
     }
 
     // Same "nice-to-have, never blocks the rest of the screen" treatment as recovery above.
@@ -118,6 +128,12 @@ export default function TodayScreen() {
       )}
 
       {!isLoading && error && <Text style={styles.error}>{error}</Text>}
+
+      {!isLoading && !error && bodyDiagramEstimates.size > 0 && (
+        <View style={styles.bodyDiagramCard}>
+          <BodyDiagram estimatesByMuscleGroup={bodyDiagramEstimates} />
+        </View>
+      )}
 
       {!isLoading && !error && weekReview && (
         <Pressable onPress={() => router.push('/week-review')}>
@@ -216,6 +232,10 @@ const styles = StyleSheet.create({
   loadingRow: {
     marginTop: spacing.xxl,
     alignItems: 'center',
+  },
+  bodyDiagramCard: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
   },
   error: {
     color: colors.danger,
