@@ -9,6 +9,44 @@ const CARDIO_KIND_BY_SESSION_TYPE: Record<CardioSessionType, 'cardio_duration' |
   interval: 'cardio_interval',
 };
 
+/**
+ * The single place that computes a `day_exercises.progression_rule` value —
+ * every insert path must call this for every row. `progression_rule` is
+ * NOT NULL in the DB, and Postgres/PostgREST bulk inserts do NOT fall back
+ * to the column default for a key that's simply absent from one object in a
+ * batch: if any row in the same `.insert([...])` array is missing a key that
+ * another row has, the missing rows get an explicit NULL for that column,
+ * not the default — so a mixed batch (e.g. strength rows that set
+ * `progression_rule` alongside cardio rows that don't) trips the NOT NULL
+ * constraint even though the column has `default '{}'::jsonb`. Routing every
+ * row through this helper is what prevents that class of bug for good.
+ */
+export function defaultProgressionRuleFor(
+  exercise:
+    | { kind: 'strength'; weightIncrementKg: number }
+    | { kind: 'cardio_duration' | 'cardio_interval'; sessionType: CardioSessionType },
+): Record<string, unknown> {
+  if (exercise.kind === 'strength') {
+    return { weightIncrementKg: exercise.weightIncrementKg };
+  }
+  return { type: 'polarized', sessionType: exercise.sessionType };
+}
+
+/**
+ * Defensive check run right before every `day_exercises` insert: turns a raw
+ * Postgres 23502 (not-null violation) into a clear, immediately-diagnosable
+ * application error instead of letting the constraint failure bubble up
+ * un-explained.
+ */
+export function assertProgressionRules(rows: Array<{ exercise_name: string; progression_rule?: unknown }>): void {
+  const missing = rows.find((row) => row.progression_rule === null || row.progression_rule === undefined);
+  if (missing) {
+    throw new Error(
+      `Interne fout: oefening "${missing.exercise_name}" heeft geen progression_rule en kan niet worden opgeslagen.`,
+    );
+  }
+}
+
 export interface OnboardingProfileExtras {
   displayName?: string | null;
   targetPhysique: Physique;
@@ -53,24 +91,29 @@ export async function insertProgramStructure(userId: string, program: GeneratedP
       rep_range_max: exercise.repRangeMax,
       target_rir: exercise.targetRIR,
       exercise_type: exercise.exerciseType,
-      progression_rule: { weightIncrementKg: exercise.weightIncrementKg },
+      progression_rule: defaultProgressionRuleFor({ kind: 'strength', weightIncrementKg: exercise.weightIncrementKg }),
     }));
-    const cardioRows = day.cardioSessions.map((session) => ({
-      program_day_id: programDayId,
-      exercise_order: session.exerciseOrder,
-      exercise_name: session.exerciseName,
-      muscle_group: null,
-      kind: CARDIO_KIND_BY_SESSION_TYPE[session.sessionType],
-      sets: null,
-      rep_range_min: null,
-      rep_range_max: null,
-      target_rir: null,
-      exercise_type: null,
-      cardio_config: { durationMinutes: session.durationMinutes },
-    }));
+    const cardioRows = day.cardioSessions.map((session) => {
+      const kind = CARDIO_KIND_BY_SESSION_TYPE[session.sessionType];
+      return {
+        program_day_id: programDayId,
+        exercise_order: session.exerciseOrder,
+        exercise_name: session.exerciseName,
+        muscle_group: null,
+        kind,
+        sets: null,
+        rep_range_min: null,
+        rep_range_max: null,
+        target_rir: null,
+        exercise_type: null,
+        cardio_config: { durationMinutes: session.durationMinutes },
+        progression_rule: defaultProgressionRuleFor({ kind, sessionType: session.sessionType }),
+      };
+    });
     return [...strengthRows, ...cardioRows];
   });
 
+  assertProgressionRules(exerciseRows);
   const { error: exercisesError } = await supabase.from('day_exercises').insert(exerciseRows);
   if (exercisesError) throw exercisesError;
 

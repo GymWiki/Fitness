@@ -39,6 +39,16 @@ function createMockSupabase(overrides: {
       const rows = insertCall.args[0] as Array<{ day_order: number }>;
       return { data: rows.map((row, i) => ({ id: `day-${i}`, day_order: row.day_order })), error: null };
     }
+    if (table === 'day_exercises' && insertCall) {
+      // Simulates the real Postgres NOT NULL constraint on progression_rule — a row
+      // missing it fails with the exact 23502 the "Nieuw programma aanmaken" bug produced.
+      const rows = insertCall.args[0] as Array<{ progression_rule?: unknown }>;
+      const missing = rows.find((row) => row.progression_rule === null || row.progression_rule === undefined);
+      if (missing) {
+        return { data: null, error: { message: 'null value in column "progression_rule" of relation "day_exercises" violates not-null constraint', code: '23502' } };
+      }
+      return { data: null, error: null };
+    }
     return { data: null, error: null };
   }
 
@@ -109,6 +119,24 @@ describe('switchGoal', () => {
     expect(adjustmentPayload.adjustment_type).toBe('goal_changed');
     expect(adjustmentPayload.reason).toContain('hypertrofie');
     expect(adjustmentPayload.reason).toContain('kracht');
+  });
+
+  it('schemawissel naar een gebalanceerd doel (kracht + cardio) slaagt zonder fout (regressietest progression_rule)', async () => {
+    const mock = createMockSupabase();
+    mockSupabase.from.mockImplementation(mock.from);
+
+    // 'balanced_general' -> goal 'mixed', which generates both strength AND cardio
+    // day_exercises rows in the same insert batch — exactly the mixed-kind batch that
+    // originally triggered the progression_rule NOT NULL violation.
+    await expect(switchGoal('user-1', profile, 'balanced_general')).resolves.toBeUndefined();
+
+    const exerciseInsertCall = mock.calls.find((c) => c.table === 'day_exercises' && c.op === 'insert')!;
+    const rows = exerciseInsertCall.args[0] as Array<{ progression_rule?: unknown }>;
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.progression_rule).toBeDefined();
+      expect(row.progression_rule).not.toBeNull();
+    }
   });
 
   it('schemawissel behoudt logs: never archives the old program if creating the new one fails', async () => {

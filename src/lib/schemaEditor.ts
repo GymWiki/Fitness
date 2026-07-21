@@ -1,3 +1,4 @@
+import { assertProgressionRules } from './programs';
 import { supabase } from './supabase';
 
 export interface SchemaExercise {
@@ -145,18 +146,22 @@ export async function addDay(program: SchemaProgram, templateDayId: string): Pro
     .single();
   if (dayError) throw dayError;
 
-  const { error: exercisesError } = await supabase.from('day_exercises').insert(
-    templateDay.exercises.map((exercise) => ({
-      program_day_id: newDay.id,
-      exercise_order: exercise.exerciseOrder,
-      exercise_name: exercise.exerciseName,
-      muscle_group: exercise.muscleGroup,
-      kind: exercise.kind,
-      sets: exercise.sets,
-      rep_range_min: exercise.repRangeMin,
-      rep_range_max: exercise.repRangeMax,
-      target_rir: exercise.targetRIR,
-    })),
-  );
+  const exerciseRows = templateDay.exercises.map((exercise) => ({
+    program_day_id: newDay.id,
+    exercise_order: exercise.exerciseOrder,
+    exercise_name: exercise.exerciseName,
+    muscle_group: exercise.muscleGroup,
+    kind: exercise.kind,
+    sets: exercise.sets,
+    rep_range_min: exercise.repRangeMin,
+    rep_range_max: exercise.repRangeMax,
+    target_rir: exercise.targetRIR,
+    // The template day's own progression_rule isn't carried in SchemaExercise, so this
+    // is a fresh default rather than a copy — matches the DB default `'{}'::jsonb`, set
+    // explicitly (not omitted) so a mixed-kind batch can never NULL-fill it out from under us.
+    progression_rule: {},
+  }));
+  assertProgressionRules(exerciseRows);
+  const { error: exercisesError } = await supabase.from('day_exercises').insert(exerciseRows);
   if (exercisesError) throw exercisesError;
 }
