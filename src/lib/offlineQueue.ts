@@ -35,10 +35,25 @@ export interface LogCardioPayload {
   rounds?: number;
 }
 
+export interface LogFoodPayload {
+  foodLogId: string;
+  userId: string;
+  loggedAt: string;
+  /** Exactly one of barcode/customName is set — a cached product or a free-text manual entry. */
+  barcode?: string;
+  customName?: string;
+  quantityGrams: number;
+  calories: number;
+  proteinGrams: number;
+  carbsGrams: number;
+  fatGrams: number;
+}
+
 export type QueuedAction =
   | { id: string; type: 'create_workout'; payload: CreateWorkoutPayload }
   | { id: string; type: 'log_set'; payload: LogSetPayload }
-  | { id: string; type: 'log_cardio'; payload: LogCardioPayload };
+  | { id: string; type: 'log_cardio'; payload: LogCardioPayload }
+  | { id: string; type: 'log_food'; payload: LogFoodPayload };
 
 async function readQueue(): Promise<QueuedAction[]> {
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
@@ -87,18 +102,36 @@ async function runAction(action: QueuedAction): Promise<void> {
     return;
   }
 
-  const { cardioLogId, workoutId, dayExerciseId, sessionType, durationMinutes, rpe, distanceKm, avgHeartRate, rounds } =
-    action.payload;
-  const { error } = await supabase.from('cardio_logs').upsert({
-    id: cardioLogId,
-    workout_id: workoutId,
-    day_exercise_id: dayExerciseId,
-    session_type: sessionType,
-    duration_minutes: durationMinutes,
-    rpe,
-    distance_km: distanceKm ?? null,
-    avg_heart_rate: avgHeartRate ?? null,
-    rounds: rounds ?? null,
+  if (action.type === 'log_cardio') {
+    const { cardioLogId, workoutId, dayExerciseId, sessionType, durationMinutes, rpe, distanceKm, avgHeartRate, rounds } =
+      action.payload;
+    const { error } = await supabase.from('cardio_logs').upsert({
+      id: cardioLogId,
+      workout_id: workoutId,
+      day_exercise_id: dayExerciseId,
+      session_type: sessionType,
+      duration_minutes: durationMinutes,
+      rpe,
+      distance_km: distanceKm ?? null,
+      avg_heart_rate: avgHeartRate ?? null,
+      rounds: rounds ?? null,
+    });
+    if (error) throw error;
+    return;
+  }
+
+  const { foodLogId, userId, loggedAt, barcode, customName, quantityGrams, calories, proteinGrams, carbsGrams, fatGrams } = action.payload;
+  const { error } = await supabase.from('food_logs').upsert({
+    id: foodLogId,
+    user_id: userId,
+    logged_at: loggedAt,
+    barcode: barcode ?? null,
+    custom_name: customName ?? null,
+    quantity_grams: quantityGrams,
+    calories,
+    protein_grams: proteinGrams,
+    carbs_grams: carbsGrams,
+    fat_grams: fatGrams,
   });
   if (error) throw error;
 }

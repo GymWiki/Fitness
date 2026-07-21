@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CalendarIcon, HomeIcon, TrendingUpIcon, UserIcon, type IconProps } from '@/components/icons';
+import { CalendarIcon, HomeIcon, TrendingUpIcon, UserIcon, UtensilsIcon, type IconProps } from '@/components/icons';
 import { colors } from '@/theme/colors';
 
 // Icon + label + baseline breathing room on a device with NO bottom safe-area
@@ -36,6 +36,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="index" options={{ title: 'Vandaag', tabBarIcon: tabIcon(HomeIcon) }} />
       <Tabs.Screen name="schema" options={{ title: 'Schema', tabBarIcon: tabIcon(CalendarIcon) }} />
+      <Tabs.Screen name="nutrition" options={{ title: 'Voeding', tabBarIcon: tabIcon(UtensilsIcon) }} />
       <Tabs.Screen name="progress" options={{ title: 'Progressie', tabBarIcon: tabIcon(TrendingUpIcon) }} />
       <Tabs.Screen name="profile" options={{ title: 'Profiel', tabBarIcon: tabIcon(UserIcon) }} />
     </Tabs>

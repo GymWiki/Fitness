@@ -26,7 +26,13 @@
     },
     "plugins": [
       "expo-router",
-      "expo-splash-screen"
+      "expo-splash-screen",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Adaptive Fitness gebruikt de camera om barcodes van voedingsproducten te scannen."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
