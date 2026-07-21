@@ -1,7 +1,13 @@
+import { buildCardioSessionTypes, CARDIO_BASELINE_BY_GOAL } from './cardioBaseline';
 import { MOVEMENT_SLOTS } from './exercises';
 import { getRepScheme, getWeightIncrementKg } from './repSchemes';
 import { TEMPLATE_DAY_ARCHETYPES, selectTemplateKey, type DayArchetype } from './templates';
-import type { GeneratedDay, GeneratedExercise, GeneratedProgram, IntakeAnswers, TemplateKey } from './types';
+import type { GeneratedCardioSession, GeneratedDay, GeneratedExercise, GeneratedProgram, Goal, IntakeAnswers, TemplateKey } from './types';
+
+const CARDIO_SESSION_NAME: Record<GeneratedCardioSession['sessionType'], string> = {
+  zone2: 'Zone 2 cardio',
+  interval: 'Interval training',
+};
 
 const MIN_DAYS_PER_WEEK = 2;
 const MAX_DAYS_PER_WEEK = 6;
@@ -34,7 +40,36 @@ function buildDay(archetype: DayArchetype, dayOrder: number, intake: IntakeAnswe
     dayOrder,
     name: archetype.name,
     exercises: archetype.slotIds.map((slotId, index) => buildExercise(archetype, slotId, index + 1, intake)),
+    cardioSessions: [],
   };
+}
+
+/**
+ * Dedicated cardio days appended after the strength days, per the goal's
+ * baseline in `cardioBaseline.ts` — the single place that config lives.
+ * Each cardio session gets its own day (own `program_days` row once
+ * persisted) rather than being tacked onto a lifting day, so it shows up
+ * as its own clear entry in the schema and rotation.
+ */
+function buildCardioDays(startingDayOrder: number, goal: Goal): GeneratedDay[] {
+  const baseline = CARDIO_BASELINE_BY_GOAL[goal];
+  const sessionTypes = buildCardioSessionTypes(baseline.sessionsPerWeek);
+
+  return sessionTypes.map((sessionType, index) => {
+    const name = CARDIO_SESSION_NAME[sessionType];
+    const session: GeneratedCardioSession = {
+      exerciseOrder: 1,
+      exerciseName: name,
+      sessionType,
+      durationMinutes: baseline.minutesPerSession,
+    };
+    return {
+      dayOrder: startingDayOrder + index,
+      name,
+      exercises: [],
+      cardioSessions: [session],
+    };
+  });
 }
 
 /**
@@ -57,10 +92,12 @@ export function generateProgram(intake: IntakeAnswers): GeneratedProgram {
   }
 
   const templateKey = selectTemplateKey(intake.daysPerWeek);
+  const strengthDays = buildProgramDays(templateKey, intake);
+  const cardioDays = buildCardioDays(strengthDays.length + 1, intake.goal);
   return {
     templateKey,
     name: `${TEMPLATE_LABELS[templateKey]} (${intake.daysPerWeek}x per week)`,
     goal: intake.goal,
-    days: buildProgramDays(templateKey, intake),
+    days: [...strengthDays, ...cardioDays],
   };
 }

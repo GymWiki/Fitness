@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { CARDIO_BASELINE_BY_GOAL, weeklyCardioMinutes } from '../src/cardioBaseline';
 import { generateProgram } from '../src/generate';
 import { selectTemplateKey } from '../src/templates';
-import type { IntakeAnswers } from '../src/types';
+import type { GeneratedDay, Goal, IntakeAnswers } from '../src/types';
 
 function intake(overrides: Partial<IntakeAnswers> = {}): IntakeAnswers {
   return {
@@ -11,6 +12,14 @@ function intake(overrides: Partial<IntakeAnswers> = {}): IntakeAnswers {
     equipment: 'gym',
     ...overrides,
   };
+}
+
+function strengthDays(days: GeneratedDay[]): GeneratedDay[] {
+  return days.filter((day) => day.exercises.length > 0);
+}
+
+function cardioDays(days: GeneratedDay[]): GeneratedDay[] {
+  return days.filter((day) => day.cardioSessions.length > 0);
 }
 
 describe('selectTemplateKey', () => {
@@ -31,21 +40,28 @@ describe('generateProgram', () => {
     expect(() => generateProgram(intake({ daysPerWeek: 7 }))).toThrow();
   });
 
-  it('builds one day per requested day-per-week, in order, starting at 1', () => {
+  it('builds one strength day per requested day-per-week, in order, starting at 1, with cardio days appended after', () => {
     const program = generateProgram(intake({ daysPerWeek: 3 }));
-    expect(program.days).toHaveLength(3);
-    expect(program.days.map((d) => d.dayOrder)).toEqual([1, 2, 3]);
+    const strength = strengthDays(program.days);
+    expect(strength).toHaveLength(3);
+    expect(strength.map((d) => d.dayOrder)).toEqual([1, 2, 3]);
+
+    const cardio = cardioDays(program.days);
+    expect(cardio.length).toBeGreaterThan(0);
+    // dayOrder keeps counting up without gaps or overlap with the strength days.
+    expect(cardio.map((d) => d.dayOrder)).toEqual(cardio.map((_, i) => 4 + i));
   });
 
-  it('cycles full-body A/B days for a 2-day week', () => {
+  it('cycles full-body A/B days for a 2-day week, with a cardio day after them', () => {
     const program = generateProgram(intake({ daysPerWeek: 2 }));
     expect(program.templateKey).toBe('full_body_3x');
-    expect(program.days.map((d) => d.name)).toEqual(['Full Body A', 'Full Body B']);
+    expect(strengthDays(program.days).map((d) => d.name)).toEqual(['Full Body A', 'Full Body B']);
+    expect(cardioDays(program.days).length).toBeGreaterThan(0);
   });
 
   it('gives every full-body day the same set of movement patterns, each exactly once', () => {
     const program = generateProgram(intake({ daysPerWeek: 3 }));
-    for (const day of program.days) {
+    for (const day of strengthDays(program.days)) {
       const muscleGroups = day.exercises.map((e) => e.muscleGroup);
       expect(new Set(muscleGroups).size).toBe(muscleGroups.length);
       expect(day.exercises).toHaveLength(6);
@@ -55,7 +71,7 @@ describe('generateProgram', () => {
   it('builds a real upper/lower split for 4 days per week', () => {
     const program = generateProgram(intake({ daysPerWeek: 4, goal: 'strength' }));
     expect(program.templateKey).toBe('upper_lower_4x');
-    expect(program.days.map((d) => d.name)).toEqual([
+    expect(strengthDays(program.days).map((d) => d.name)).toEqual([
       'Bovenlichaam A',
       'Onderlichaam A',
       'Bovenlichaam B',
@@ -65,7 +81,7 @@ describe('generateProgram', () => {
 
   it('cycles upper/lower archetypes with modulo for a 5-day week instead of repeating verbatim', () => {
     const program = generateProgram(intake({ daysPerWeek: 5 }));
-    expect(program.days.map((d) => d.name)).toEqual([
+    expect(strengthDays(program.days).map((d) => d.name)).toEqual([
       'Bovenlichaam A',
       'Onderlichaam A',
       'Bovenlichaam B',
@@ -116,5 +132,59 @@ describe('generateProgram', () => {
   it('names the program with the template label and the actual requested frequency', () => {
     const program = generateProgram(intake({ daysPerWeek: 5 }));
     expect(program.name).toBe('Upper/Lower Split (5x per week)');
+  });
+
+  describe('cardio baseline per goal (bugfix: cardio was missing from every schema, not just mixed)', () => {
+    function totalCardioMinutesFor(goal: Goal): number {
+      const program = generateProgram(intake({ goal, daysPerWeek: 3 }));
+      return cardioDays(program.days).reduce(
+        (sum, day) => sum + day.cardioSessions.reduce((daySum, session) => daySum + session.durationMinutes, 0),
+        0,
+      );
+    }
+
+    it('mixed gets a substantial, balanced cardio component: 1-2 sessions per week', () => {
+      const program = generateProgram(intake({ goal: 'mixed', daysPerWeek: 3 }));
+      const cardio = cardioDays(program.days);
+      expect(cardio.length).toBeGreaterThanOrEqual(1);
+      expect(cardio.length).toBeLessThanOrEqual(2);
+      // Every cardio session actually made it into a day_exercise-shaped session, not an empty day.
+      for (const day of cardio) {
+        expect(day.cardioSessions.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('hypertrophy and strength get a small, non-zero cardio base (interference-conscious)', () => {
+      for (const goal of ['hypertrophy', 'strength'] as const) {
+        const program = generateProgram(intake({ goal, daysPerWeek: 4 }));
+        const cardio = cardioDays(program.days);
+        expect(cardio.length).toBeGreaterThan(0);
+        expect(totalCardioMinutesFor(goal)).toBeLessThan(totalCardioMinutesFor('mixed'));
+      }
+    });
+
+    it('fat_loss and endurance keep cardio as the dominant component (no regression vs. the intended design)', () => {
+      for (const goal of ['fat_loss', 'endurance'] as const) {
+        expect(totalCardioMinutesFor(goal)).toBeGreaterThan(totalCardioMinutesFor('mixed'));
+        expect(totalCardioMinutesFor(goal)).toBeGreaterThanOrEqual(weeklyCardioMinutes(goal));
+      }
+    });
+
+    it('every goal has a positive cardio baseline (health-baseline requirement) and the config lives in one table', () => {
+      for (const goal of Object.keys(CARDIO_BASELINE_BY_GOAL) as Goal[]) {
+        expect(CARDIO_BASELINE_BY_GOAL[goal].sessionsPerWeek).toBeGreaterThan(0);
+        expect(CARDIO_BASELINE_BY_GOAL[goal].minutesPerSession).toBeGreaterThan(0);
+      }
+    });
+
+    it('cardio days never carry strength exercises and vice versa', () => {
+      const program = generateProgram(intake({ goal: 'mixed', daysPerWeek: 4 }));
+      for (const day of program.days) {
+        const isCardioDay = day.cardioSessions.length > 0;
+        const isStrengthDay = day.exercises.length > 0;
+        expect(isCardioDay && isStrengthDay).toBe(false);
+        expect(isCardioDay || isStrengthDay).toBe(true);
+      }
+    });
   });
 });

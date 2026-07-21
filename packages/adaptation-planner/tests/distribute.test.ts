@@ -62,4 +62,24 @@ describe('distributeSessions', () => {
     const cardioEntry = plan.find((e) => e.cardioSessionId === 'zone2-1')!;
     expect(forbiddenWeekdays).not.toContain(cardioEntry.weekday);
   });
+
+  it('protects the mix goal\'s newly-generated cardio baseline from heavy-day adjacency too (bugfix confirmation)', () => {
+    // Shaped like what @fitness/program-generator now seeds for goal 'mixed'
+    // (buildCardioSessionTypes(2) => ['zone2', 'interval']) — this was previously
+    // never scheduled at all because it was never generated. distributeSessions
+    // itself needs no changes: it already protects all cardio for 'mixed'.
+    const generatorShapedCardio = [
+      { id: 'zone2-1', intensity: 'low' as const },
+      { id: 'interval-1', intensity: 'high' as const },
+    ];
+    const plan = distributeSessions(upperLowerDays, generatorShapedCardio, 'mixed');
+    const heavyWeekdays = plan.filter((e) => ['lower-a', 'lower-b'].includes(e.strengthDayId ?? '')).map((e) => e.weekday);
+    const forbiddenWeekdays = [...heavyWeekdays, ...heavyWeekdays.map(dayBefore)];
+
+    for (const session of generatorShapedCardio) {
+      const cardioEntry = plan.find((e) => e.cardioSessionId === session.id);
+      expect(cardioEntry).toBeDefined();
+      expect(forbiddenWeekdays).not.toContain(cardioEntry!.weekday);
+    }
+  });
 });

@@ -31,10 +31,23 @@ export interface GeneratedExercise {
   weightIncrementKg: number;
 }
 
+export type CardioSessionType = 'zone2' | 'interval';
+
+export interface GeneratedCardioSession {
+  exerciseOrder: number;
+  exerciseName: string;
+  sessionType: CardioSessionType;
+  /** Suggested starting duration in minutes — a day-1 default; actual progression is driven by logged history. */
+  durationMinutes: number;
+}
+
 export interface GeneratedDay {
   dayOrder: number;
   name: string;
+  /** Strength exercises for this day — empty for a dedicated cardio day. */
   exercises: GeneratedExercise[];
+  /** Cardio sessions for this day — empty for a strength day. Always present (never undefined) to keep consumers simple. */
+  cardioSessions: GeneratedCardioSession[];
 }
 
 export interface GeneratedProgram {
