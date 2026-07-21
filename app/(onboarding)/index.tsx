@@ -1,5 +1,5 @@
-import type { EquipmentType, ExperienceLevel, IntakeAnswers } from '@fitness/program-generator';
-import { generateProgram } from '@fitness/program-generator';
+import type { EquipmentType, ExperienceLevel, Goal, IntakeAnswers } from '@fitness/program-generator';
+import { CARDIO_BASELINE_BY_GOAL, generateProgram } from '@fitness/program-generator';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Button } from '@/components/Button';
@@ -271,6 +271,7 @@ export default function IntakeScreen() {
             <Text style={styles.summaryBody}>
               We bouwen een {program.name.toLowerCase()}-schema van {intake!.daysPerWeek} dagen per week.
             </Text>
+            <Text style={styles.summaryBody}>{cardioExplanation(program.goal)}</Text>
           </Card>
 
           {program.days.map((day) => (
@@ -282,6 +283,11 @@ export default function IntakeScreen() {
                 <Text key={exercise.exerciseOrder} style={styles.exerciseLine}>
                   {exercise.exerciseName} — {exercise.sets}× {exercise.repRangeMin}-{exercise.repRangeMax} reps
                   (RIR {exercise.targetRIR})
+                </Text>
+              ))}
+              {day.cardioSessions.map((session) => (
+                <Text key={session.exerciseOrder} style={styles.exerciseLine}>
+                  {session.exerciseName} — ±{session.durationMinutes} minuten
                 </Text>
               ))}
             </View>
@@ -315,6 +321,19 @@ export default function IntakeScreen() {
       </View>
     </ScrollView>
   );
+}
+
+/** Explains the cardio baseline that's now in every schema, per the goal — ties into the explanation feature. */
+function cardioExplanation(goal: Goal): string {
+  const baseline = CARDIO_BASELINE_BY_GOAL[goal];
+  const sessionWord = baseline.sessionsPerWeek === 1 ? 'lichte cardiosessie' : 'cardiosessies';
+  if (goal === 'fat_loss' || goal === 'endurance') {
+    return `Cardio is de kern van dit schema: ${baseline.sessionsPerWeek} sessies per week, opgebouwd volgens de 80/20-verdeling tussen rustige duurtraining en intervallen.`;
+  }
+  if (goal === 'mixed') {
+    return `Je schema combineert kracht met ${baseline.sessionsPerWeek} cardiosessies per week, in balans met je krachttraining.`;
+  }
+  return `Je schema bevat ook ${baseline.sessionsPerWeek} ${sessionWord} per week voor je hart- en vaatgezondheid.`;
 }
 
 function FieldLabel({ children }: { children: string }) {

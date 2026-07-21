@@ -202,6 +202,71 @@ de aangeleverde bronnenlijst op:
   & Buzzichelli's periodiseringstekstboek, en Bell et al. (2025) resp.
   Meeusen et al. (2013) voor deload/overtraining.
 
+**Bugfix (na Fase 1): cardio ontbrak in élk schema, niet alleen bij "mix".**
+
+*Diagnose.* De gerapporteerde klacht was dat doel "mix" geen cardio kreeg.
+Grep door de hele repo op `cardio_duration`/`cardio_interval`/`cardio_config`
+liet zien dat geen van die drie ooit werd geschreven vanuit
+`packages/program-generator` — de generator bouwde uitsluitend
+krachtdagen, voor élk doel. `day_exercises.kind` werd bij het aanmaken van
+een nieuw programma altijd hardcoded op `'strength'`
+(`src/lib/programs.ts`'s `insertProgramStructure`). De cardio-*engine*
+(`packages/progression-engine/src/cardio.ts`, polarized 80/20-model) en de
+interferentie-bescherming in `distributeSessions()`
+(`packages/adaptation-planner/src/distribute.ts`, al goal-aware: houdt
+cardio weg van/na zware onderlichaamsdagen voor endurance/fat_loss/mixed)
+bestonden al en waren al correct — ze kregen alleen nooit cardio-sessies
+aangeleverd om iets mee te doen. Conclusie: de bug zat uitsluitend in de
+generator + persistentielaag, niet in een van beide engines.
+
+*Fix A + B (samengevoegd — bleek in de praktijk één config-tabel).* Nieuwe
+`packages/program-generator/src/cardioBaseline.ts` met
+`CARDIO_BASELINE_BY_GOAL: Record<Goal, {sessionsPerWeek, minutesPerSession}>`
+als enige bron van waarheid voor hoeveel cardio elk doel krijgt:
+hypertrophy/strength 1×20 min (bewust laag, interferentie met krachtopbouw
+beperken), mixed 2×30 min (substantieel, in balans met kracht — dit was de
+gemelde bug), fat_loss/endurance 3×50 min (~150 min/week, WHO-richtlijn,
+ongewijzigd t.o.v. voorheen: cardio was en blijft daar het hoofdbestanddeel).
+`GeneratedDay` kreeg een nieuw, altijd-aanwezig `cardioSessions`-veld naast
+`exercises`; cardio krijgt eigen, toegewijde dagen (dus geen
+discriminated union nodig op `GeneratedExercise`, dat vooral
+kracht-specifieke velden heeft). `generateProgram()` plakt deze
+cardio-dagen na de kracht-dagen. `buildCardioSessionTypes()` zaait een
+eenvoudige zone2/interval-verdeling (nooit een harde interval als eerste
+sessie) — een startpunt, geen precisie-80/20; zodra er historie is neemt
+`adviseNextCardioType`/`adviseCardioProgression` het over, zoals al het
+geval was. Bewust géén cross-package import van
+`progression-engine/cardio.ts`'s eigen per-doel-constanten — de drie
+packages blijven onderling ontkoppeld, zoals in eerdere sessies vastgelegd.
+`insertProgramStructure` (`src/lib/programs.ts`) mapt nu zowel
+`day.exercises` als `day.cardioSessions` naar `day_exercises`-rijen, met de
+juiste `kind` (`zone2` → `cardio_duration`, `interval` → `cardio_interval`)
+en `cardio_config`; dit activeert voor het eerst de al langer bestaande
+maar dode `CardioLogger`-tak in `app/workout/[dayId].tsx`. Onboarding-
+samenvatting en de bevestigingskaart bij het wisselen van doel
+(`switch-goal.tsx`) tonen nu ook de cardio-sessies, met een korte
+doel-afhankelijke uitleg ("Je schema bevat ook N lichte cardiosessie(s)
+per week voor je hart- en vaatgezondheid" resp. een cardio-nadruk-variant
+voor fat_loss/endurance/mixed).
+`distributeSessions()` zelf is niet aangeraakt — puur een bevestigende
+test toegevoegd met generator-vormige cardio-input voor doel `mixed`, die
+aantoont dat de al bestaande bescherming ook de nieuwe mix-cardio correct
+weghoudt bij zware dagen.
+
+*Tests.* 5 nieuwe tests in `generate.test.ts` (mixed krijgt 1-2 sessies;
+hypertrophy/strength krijgen een kleine, niet-nul basis kleiner dan mixed;
+fat_loss/endurance blijven domineren t.o.v. mixed en halen de volledige
+baseline; elk doel heeft een positieve baseline; cardio- en krachtdagen
+sluiten elkaar uit), plus een los bestand `cardioBaseline.test.ts` voor
+`buildCardioSessionTypes()`'s randgevallen (0, 1, 2, 3, 5 sessies). 5
+bestaande tests in `generate.test.ts` die impliciet "geen cardio" als
+correct gedrag aannamen (exacte `days`-lijsten zonder cardio-dagen) zijn
+herschreven met nieuwe `strengthDays()`/`cardioDays()`-filters — een
+bewuste, beredeneerde uitzondering op "bestaande tests moeten blijven
+slagen", omdat die tests precies de bug vastlegden die nu gefixed is. Eén
+nieuwe test in `distribute.test.ts` bevestigt de interferentie-bescherming
+voor mix-cardio zonder `distribute.ts` te wijzigen.
+
 ## Architectuurkeuzes gemaakt in deze sessie
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,

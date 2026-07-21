@@ -1,8 +1,13 @@
-import type { GeneratedProgram, IntakeAnswers } from '@fitness/program-generator';
+import type { CardioSessionType, GeneratedProgram, IntakeAnswers } from '@fitness/program-generator';
 import type { Gender } from './profile';
 import type { Physique } from './physique';
 import { fetchWithCache } from './offlineCache';
 import { supabase } from './supabase';
+
+const CARDIO_KIND_BY_SESSION_TYPE: Record<CardioSessionType, 'cardio_duration' | 'cardio_interval'> = {
+  zone2: 'cardio_duration',
+  interval: 'cardio_interval',
+};
 
 export interface OnboardingProfileExtras {
   displayName?: string | null;
@@ -37,7 +42,7 @@ export async function insertProgramStructure(userId: string, program: GeneratedP
   const exerciseRows = program.days.flatMap((day) => {
     const programDayId = programDayIdByOrder.get(day.dayOrder);
     if (!programDayId) throw new Error(`Missing inserted program_day for day_order ${day.dayOrder}`);
-    return day.exercises.map((exercise) => ({
+    const strengthRows = day.exercises.map((exercise) => ({
       program_day_id: programDayId,
       exercise_order: exercise.exerciseOrder,
       exercise_name: exercise.exerciseName,
@@ -50,6 +55,20 @@ export async function insertProgramStructure(userId: string, program: GeneratedP
       exercise_type: exercise.exerciseType,
       progression_rule: { weightIncrementKg: exercise.weightIncrementKg },
     }));
+    const cardioRows = day.cardioSessions.map((session) => ({
+      program_day_id: programDayId,
+      exercise_order: session.exerciseOrder,
+      exercise_name: session.exerciseName,
+      muscle_group: null,
+      kind: CARDIO_KIND_BY_SESSION_TYPE[session.sessionType],
+      sets: null,
+      rep_range_min: null,
+      rep_range_max: null,
+      target_rir: null,
+      exercise_type: null,
+      cardio_config: { durationMinutes: session.durationMinutes },
+    }));
+    return [...strengthRows, ...cardioRows];
   });
 
   const { error: exercisesError } = await supabase.from('day_exercises').insert(exerciseRows);

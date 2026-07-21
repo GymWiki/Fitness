@@ -1,3 +1,4 @@
+import { CARDIO_BASELINE_BY_GOAL } from '@fitness/program-generator';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -66,6 +67,11 @@ export default function SwitchGoalScreen() {
             <Text style={styles.confirmBody}>
               Je trainingshistorie, grafieken en lichaamsmetingen blijven gewoon bewaard. Je huidige schema wordt
               gearchiveerd, niet verwijderd.
+            </Text>
+            <Text style={styles.confirmBody}>
+              Het schema bevat ook {CARDIO_BASELINE_BY_GOAL[goalForPhysique(selected)].sessionsPerWeek}{' '}
+              cardiosessie{CARDIO_BASELINE_BY_GOAL[goalForPhysique(selected)].sessionsPerWeek === 1 ? '' : 's'} per
+              week voor je hart- en vaatgezondheid.
             </Text>
             {error ? <Text style={styles.error}>{error}</Text> : null}
             <View style={styles.confirmButtonWrap}>
