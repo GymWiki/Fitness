@@ -560,6 +560,48 @@ spiergroep/status/uitleg toont) — geen consolefouten. Beide tijdelijke
 bestanden/wijzigingen zijn na de verificatie weer volledig teruggedraaid;
 alleen de illustratie-bestanden zelf zijn onderdeel van deze commit.
 
+**Verfijning: voortgangsbalken bij voedingsdoelen.**
+
+*Wat er veranderde.* Nieuwe pure `src/lib/nutrientProgress.ts`
+(`describeNutrientProgress(current, target, unit)`) berekent geen nieuwe
+voedingswaarden — puur een weergaveregel bovenop de al bestaande
+`calculateNutritionTargets`/`summarizeDay`-uitkomst: het gevulde
+percentage (capped op 100%), of het doel overschreden is, en een
+concreet restant-label ("nog 800 kcal") of overschrijdings-label ("12g
+boven doel") in plaats van alleen een percentage of een negatief getal.
+`NutrientProgressBar.tsx` is herbouwd op deze functie: toont het restant
+altijd als tekst (nooit alleen balklengte — de toegankelijkheidseis uit de
+opdracht), en kreeg een `size="large"`-variant voor de calorieënbalk zodat
+die prominenter is dan de drie macrobalken eronder (groter lettertype,
+dikkere balk). `app/(tabs)/nutrition.tsx` groepeert de drie macrobalken nu
+visueel onder de grotere calorieënbalk.
+
+*Kleurkeuze.* Nieuwe `colors.progress` (neutraal blauw) in
+`theme/colors.ts` voor de normale vulling — bewust niet
+`colors.accent`/`warning` (groen/oranje), want die kleuren betekenen al
+iets anders elders in de app (de hersteltoestand-kleuren van het
+lichaamsdiagram: herstellend/venster-sluit/hersteld) en zouden op het
+voedingsscherm verwarrend hergebruikt zijn voor een compleet ander begrip.
+Bij overschrijding van het doel schakelt de balk (en het label) naar
+`colors.danger` — dit is géén hergebruik van de hersteldiagram-kleuren
+zelf, maar dezelfde bestaande "er is iets mis"-betekenis die `colors.danger`
+al overal elders in de app heeft (bijv. formuliervalidatie), dus consistent
+met het designsysteem in plaats van een nieuwe, losse betekenis.
+
+*Tests.* Nieuw `nutrientProgress.test.ts` (6 tests): niets gegeten geeft
+het volledige doel als restant, een gedeeltelijke balk geeft het juiste
+percentage én concrete restant, exact op doel geeft "nog 0" (nog geen
+overschrijding), overschrijding capt de balk op 100% en toont een
+"boven doel"-label in plaats van een negatief restant, afronding van
+kommagetallen, en een randgeval met doel ≤ 0 crasht niet.
+
+*Verificatie.* Zelfde aanpak als bij het lichaamsdiagram: een tijdelijke
+ongeauthenticeerde previewroute met de balken in verschillende scenario's
+(leeg, gedeeltelijk, exact op doel, ver over doel), web-export, en een
+Playwright-screenshot — bevestigd dat de balken, kleuren en labels er
+correct uitzien, geen consolefouten. Achteraf volledig teruggedraaid;
+maakt geen deel uit van deze commit.
+
 **Bugfix (na stap 10): "Failed to fetch" bij voedsel zoeken op de
 webversie.**
 
@@ -1544,7 +1586,7 @@ Actions-tab (in plaats van stil niets te doen), dus het ergste geval is
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages + root src/lib samen (184 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (190 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```
