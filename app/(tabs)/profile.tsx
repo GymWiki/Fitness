@@ -303,6 +303,10 @@ export default function ProfileScreen() {
           <Text style={styles.faqLinkText}>Wetenschap — waarom werkt dit zo?</Text>
         </Pressable>
 
+        <Text style={styles.attribution}>
+          Voedingsgegevens via Open Food Facts, een gratis en open database onder de Open Database License (ODbL).
+        </Text>
+
         <View style={styles.signOutButtonWrap}>
           <Button variant="danger" onPress={signOut}>
             Uitloggen
@@ -519,6 +523,13 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 14,
     fontWeight: '600',
+  },
+  attribution: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
+    marginTop: spacing.lg,
   },
   signOutButtonWrap: {
     marginTop: spacing.xxl,

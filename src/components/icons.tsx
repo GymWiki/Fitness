@@ -120,6 +120,48 @@ export function SwapIcon({ size = 24, color }: IconProps) {
   );
 }
 
+export function UtensilsIcon({ size = 24, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M6 2v8a2 2 0 0 0 2 2v10" stroke={color} strokeWidth={STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round" />
+      <Line x1="6" y1="2" x2="6" y2="10" stroke={color} strokeWidth={STROKE_WIDTH} strokeLinecap="round" />
+      <Line x1="9" y1="2" x2="9" y2="10" stroke={color} strokeWidth={STROKE_WIDTH} strokeLinecap="round" />
+      <Path d="M17 2c-1.7 0-3 2-3 5s1 5 2 5v10" stroke={color} strokeWidth={STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function BarcodeIcon({ size = 24, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M4 5v14M8 5v14M11 5v14M15 5v14M17 5v14M20 5v14" stroke={color} strokeWidth={STROKE_WIDTH} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function SearchIcon({ size = 24, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="11" cy="11" r="6.5" stroke={color} strokeWidth={STROKE_WIDTH} />
+      <Line x1="16" y1="16" x2="21" y2="21" stroke={color} strokeWidth={STROKE_WIDTH} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function StarIcon({ size = 24, color, filled = false }: IconProps & { filled?: boolean }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 3l2.6 5.6 6 .7-4.4 4.2 1.1 6-5.3-3-5.3 3 1.1-6-4.4-4.2 6-.7Z"
+        stroke={color}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinejoin="round"
+        fill={filled ? color : 'none'}
+      />
+    </Svg>
+  );
+}
+
 export function EditIcon({ size = 24, color }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">

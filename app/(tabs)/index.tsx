@@ -8,6 +8,8 @@ import { EmptyState } from '@/components/EmptyState';
 import { RecoveryIndicator } from '@/components/RecoveryIndicator';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 import { useAuth } from '@/lib/auth';
+import { fetchMeasurementHistory } from '@/lib/measurements';
+import { checkProteinShortfall } from '@/lib/proteinSignal';
 import { fetchActiveProgram, type ActiveProgram } from '@/lib/programs';
 import { useProfile } from '@/lib/profile';
 import { fetchRecoveryEstimate } from '@/lib/recovery';
@@ -31,6 +33,7 @@ export default function TodayScreen() {
   const [program, setProgram] = useState<ActiveProgram | null>(null);
   const [weekReview, setWeekReview] = useState<WeekReview | null>(null);
   const [recoveryByMuscleGroup, setRecoveryByMuscleGroup] = useState<Map<string, RecoveryEstimate>>(new Map());
+  const [hasProteinShortfall, setHasProteinShortfall] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,15 +64,26 @@ export default function TodayScreen() {
     const muscleGroups = [...new Set((nextDay?.exercises ?? []).map((exercise) => exercise.muscleGroup).filter((mg): mg is string => !!mg))];
     if (muscleGroups.length === 0) {
       setRecoveryByMuscleGroup(new Map());
-      return;
+    } else {
+      try {
+        const estimates = await Promise.all(muscleGroups.map((mg) => fetchRecoveryEstimate(session.user.id, mg)));
+        setRecoveryByMuscleGroup(new Map(muscleGroups.map((mg, index) => [mg, estimates[index]!])));
+      } catch {
+        setRecoveryByMuscleGroup(new Map());
+      }
     }
-    try {
-      const estimates = await Promise.all(muscleGroups.map((mg) => fetchRecoveryEstimate(session.user.id, mg)));
-      setRecoveryByMuscleGroup(new Map(muscleGroups.map((mg, index) => [mg, estimates[index]!])));
-    } catch {
-      setRecoveryByMuscleGroup(new Map());
+
+    // Same "nice-to-have, never blocks the rest of the screen" treatment as recovery above.
+    if (profile) {
+      try {
+        const measurements = await fetchMeasurementHistory(session.user.id);
+        const latest = measurements[measurements.length - 1] ?? null;
+        setHasProteinShortfall(await checkProteinShortfall(session.user.id, profile, latest));
+      } catch {
+        setHasProteinShortfall(false);
+      }
     }
-  }, [session]);
+  }, [session, profile]);
 
   // Herlaadt bij elke focus, zodat het net-gelogde workout meteen de volgende dag verschuift.
   useFocusEffect(
@@ -126,6 +140,19 @@ export default function TodayScreen() {
           <Text style={styles.recoveryBannerBody}>Nu trainen bouwt door op je vooruitgang.</Text>
           <Pressable onPress={() => router.push({ pathname: '/faq', params: { openId: 'supercompensatie' } })}>
             <Text style={styles.recoveryBannerLink}>Waarom laat de app dit zien? →</Text>
+          </Pressable>
+        </Card>
+      )}
+
+      {!isLoading && !error && hasProteinShortfall && (
+        <Card style={styles.proteinBannerCard}>
+          <Text style={styles.proteinBannerTitle}>Je eiwitinname blijft al een paar dagen achter</Text>
+          <Text style={styles.proteinBannerBody}>
+            Je zit al meerdere dagen onder je eiwitdoel. Genoeg eiwit is belangrijk voor herstel en spieropbouw tijdens
+            een opbouwfase — check je doel en log op de Voeding-tab.
+          </Text>
+          <Pressable onPress={() => router.push('/(tabs)/nutrition')}>
+            <Text style={styles.proteinBannerLink}>Naar Voeding →</Text>
           </Pressable>
         </Card>
       )}
@@ -228,6 +255,28 @@ const styles = StyleSheet.create({
   },
   recoveryBannerLink: {
     color: colors.accent,
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: spacing.xs,
+  },
+  proteinBannerCard: {
+    backgroundColor: colors.warningMuted,
+    borderColor: colors.warning,
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  proteinBannerTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  proteinBannerBody: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  proteinBannerLink: {
+    color: colors.warning,
     fontSize: 13,
     fontWeight: '600',
     marginTop: spacing.xs,

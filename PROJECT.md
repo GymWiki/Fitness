@@ -329,6 +329,112 @@ cardio-rijen in dezelfde batch — exact het scenario dat de bug
 veroorzaakte) en bevestigt dat de wissel slaagt en alle rijen een
 `progression_rule` hebben.
 
+**Extra (na Fase 1), stap 10: voeding bijhouden (Open Food Facts) gekoppeld
+aan trainingsdoel.**
+
+Nieuwe, bewust losstaande feature — geen wijziging aan de kracht-/
+cardio-engines of de adaptatieplanner, alleen nieuwe code ernaast met een
+paar dunne, expliciete koppelpunten (uitleg-banner op Vandaag, sectie op
+Progressie).
+
+*Doelenberekening (`packages/nutrition-engine`, pure, 25 tests).* Nieuw,
+vierde monorepo-package, zelfde conventie als de drie trainingsengines
+(geen React Native-/Supabase-imports, eigen vitest-suite). `NutritionGoal`
+is bewust een eigen, losse union die de waarden van `program-generator`'s
+`Goal` spiegelt in plaats van hem te importeren — packages blijven
+onderling ontkoppeld. `calculateNutritionTargets()`: BMR via Mifflin-St
+Jeor (voor `gender: 'other'` het gemiddelde van de mannen-/vrouwenformule —
+een expliciete, gedocumenteerde benadering, geen klinisch precieze waarde),
+TDEE via een eenvoudige, aan trainingsdagen/week gekoppelde
+activiteitsmultiplier (geen aparte "hoe actief ben je"-vraag nodig),
+calorieaanpassing en eiwit-g/kg per doel in twee losse config-tabellen
+(`CALORIE_ADJUSTMENT_BY_GOAL`, `PROTEIN_G_PER_KG_BY_GOAL` — één bron van
+waarheid, instelbaar), vet standaard 25% van de calorieën, koolhydraten als
+restpost. `detectProteinShortfall()` is een puur signaal: vuurt alleen als
+de N (standaard 3) meest recente gelogde dagen allemaal onder het
+eiwitdoel zaten — kijkt bewust alleen naar de staart van de reeks, niet
+naar de volledige historie, zodat een oude, inmiddels rechtgezette
+tekortkoming niet blijft afgaan. `scaleNutrients()` schaalt Open Food
+Facts' per-100g-waarden naar een gelogde hoeveelheid — ook hier gekozen
+voor een pure, geteste functie in plaats van losse rekenlogica in de UI.
+
+*Open Food Facts-integratie.* `src/lib/openFoodFacts.ts`: `GET
+.../api/v2/product/{barcode}.json` voor barcode-opzoeken (v2), `GET
+.../cgi/search.pl` voor naam-zoeken (v1 — v2 heeft nog geen
+full-text-search). Beschrijvende `User-Agent`-header meegestuurd zoals
+gevraagd, met de kanttekening dat browser-`fetch` `User-Agent` als
+"forbidden header" behandelt en 'm op web stilzwijgend laat vallen — dit
+werkt dus alleen daadwerkelijk op native (iOS/Android). Een
+`status: 0`-response (barcode onbekend) geeft `null` terug, geen fout — de
+UI valt dan terug op handmatige invoer. Alle voedingswaarde-velden worden
+defensief uitgelezen (`null` bij ontbrekende data), passend bij
+community-ingevoerde, vaak onvolledige OFF-data. `src/lib/foodProducts.ts`
+cachet elk opgezocht product in de nieuwe `food_products`-tabel en
+raadpleegt die cache eerst, zodat herhaalde scans van dezelfde barcode
+(over alle gebruikers heen — het is een gedeelde cache) nooit meer de OFF
+rate limit (15 req/min voor opzoeken) raken. Zoeken (10 req/min) wordt
+nergens per toetsaanslag aangeroepen: het zoekscherm zoekt alleen op
+expliciete actie (indienen/knop), plus een pure, geteste
+`canSearchNow()`-guard (`src/lib/searchThrottle.ts`) die een tweede trigger
+binnen 500ms blokkeert (dubbeltik-bescherming) — dit is de testbare vorm
+van de debounce-eis uit de opdracht, aangezien er in deze codebase geen
+harnas voor React Native-componenttests bestaat (zelfde conventie als de
+rest van de sessie: pure logica krijgt tests, UI niet).
+
+*Datamodel (migratie `0004_nutrition.sql`).* `food_products`: gedeelde
+cache van publiek, ODbL-gelicenseerd OFF-materiaal — bewust géén
+`user_id`, RLS staat elke ingelogde gebruiker lezen/schrijven toe (het is
+feitelijk een client-side HTTP-cache, geen persoonlijke data).
+`food_logs`: user-owned (RLS zoals overal), `barcode` verwijst naar
+`food_products` óf `custom_name` is gezet voor handmatige invoer (check
+constraint, nooit beide null). `food_favorites`: snapshot van de
+per-100g-macro's op opslagmoment (geen live join naar `food_products`), zo
+blijft een favoriet werken ook als dat product ooit uit de cache valt.
+Bewust géén losse `nutrition_targets`-tabel (was optioneel in de opdracht):
+de doelen worden live berekend uit `profiles` + de laatste
+`body_measurements`-rij — snel genoeg om niet te hoeven cachen, en zo kan
+een doel nooit stale raken na een nieuwe meting.
+
+*Loggen + koppeling met trainingsdata.* Nieuw vijfde tabblad "Voeding"
+(naast Vandaag/Schema/Progressie/Profiel): dagoverzicht (calorieën/macro's
+vs. doel via een nieuwe `NutrientProgressBar`), Scannen/Zoeken, "Recent
+gelogd" (één tik: exact dezelfde eerder gelogde hoeveelheid opnieuw
+loggen) en "Favorieten" (één tik: de opgeslagen per-100g-waarden bij 100g
+loggen — voor een andere hoeveelheid gebruikt de gebruiker scannen/zoeken).
+`app/food-scan.tsx` (cameraToegang via `expo-camera`'s `CameraView` +
+`useCameraPermissions`, nieuwe permissie-plugin in `app.json`) en
+`app/food-search.tsx` delen één `FoodLogForm`-component voor de
+hoeveelheid/macro-preview/bevestig-stap, inclusief handmatige-invoermodus
+voor een niet-gevonden barcode of een lege zoekopdracht — bewust géén
+losse route hiervoor, om de kwantiteits-/preview-logica niet te
+verdubbelen. Loggen gaat via een nieuwe `log_food`-actie in de bestaande
+offline-wachtrij (`offlineQueue.ts`), zelfde patroon als `log_set`/
+`log_cardio`: client-gegenereerde id + upsert, dus een offline gelogde
+maaltijd synct zodra er weer verbinding is. Barcode-opzoeken zelf vereist
+uiteraard wel verbinding — scan- en zoekscherm tonen een duidelijke
+melding via de bestaande `useSyncStatus`-hook in plaats van de camera/het
+zoekveld te tonen zonder dat er iets mee kan.
+
+Het eiwit-tekort-signaal (`src/lib/proteinSignal.ts`) hangt aan dezelfde
+uitleg-/inzicht-laag als de supercompensatie-banner op Vandaag: een nieuwe,
+oranje `proteinBannerCard` verschijnt zodra `detectProteinShortfall` vuurt,
+uitsluitend voor de doelen hypertrophy/strength (interpretatie van
+"opbouwfase" uit de opdracht — bij fat_loss/endurance/mixed is eiwit al
+elders geprioriteerd of niet de primaire hefboom, dus daar blijft het
+signaal uit). Progressie kreeg een aparte "Voeding"-sectie (eiwit-trend
+over de laatste 14 dagen via de bestaande `LineChart`, met het actuele
+eiwitdoel als bijschrift) — expliciet naast, niet vermengd met, de
+trainingsstatistieken erboven. Open Food Facts-attributie staat onderaan
+Profiel, zoals de ODbL-licentie vereist.
+
+*Tests.* 25 nieuwe tests in `packages/nutrition-engine` (doelenberekening
+per doel/geslacht/lichaamsgewicht/trainingsfrequentie, override-parameters,
+protein-shortfall-randgevallen inclusief "alleen de staart telt" en een
+custom threshold, macro-schaling inclusief afronding). 6 nieuwe tests voor
+`canSearchNow()` (eerste zoekopdracht toegestaan, dubbeltik geblokkeerd,
+exact-op-de-grens, custom interval, en een simulatie van snel typen die
+aantoont dat niet elke toetsaanslag een zoekopdracht triggert).
+
 ## Architectuurkeuzes gemaakt in deze sessie
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
@@ -972,12 +1078,45 @@ Nog open voor Fase 2:
   categorie-chips zijn met bestaande primitieven (`Card`, `Pressable`,
   `TextInput`) gebouwd, net als de rest van de app.
 
+### Aannames bij stap 10 (voeding — Open Food Facts)
+
+- **BMR voor `gender: 'other'`**: Mifflin-St Jeor is alleen gedefinieerd
+  voor man/vrouw. Gekozen voor het gemiddelde van beide formules in plaats
+  van iemand met deze invoer uit te sluiten van een doel — een expliciete
+  benadering, geen klinisch precieze waarde. Graag bevestigen of bijsturen.
+- **Géén losse `nutrition_targets`-tabel**: de opdracht noemde deze als
+  optioneel ("hoeft niet perse opgeslagen als de functie snel genoeg is").
+  Doelen worden live berekend uit `profiles` + de laatste
+  `body_measurements`-rij; geen historie van "wat was mijn doel op moment
+  X" wordt bewaard. Als vergelijking-over-tijd van het dóél zelf (niet de
+  intake) gewenst is, is dit alsnog toe te voegen.
+- **"Opbouwfase" geïnterpreteerd als hypertrophy/strength**: het
+  eiwit-tekort-signaal vuurt alleen voor die twee doelen. Bij
+  fat_loss/endurance/mixed blijft het uit (eiwit is daar al elders
+  geprioriteerd, of niet de primaire hefboom voor dat doel).
+  Dagen zonder een enkele logging tellen niet mee als "tekort" — alleen
+  dagen met minstens één logging die onder het doel bleven, om iemand die
+  simpelweg de app niet opende niet ten onrechte te waarschuwen.
+- **Favorieten loggen altijd op 100 g** (één tik): de per-100g-snapshot in
+  `food_favorites` heeft geen bijbehorende "standaardhoeveelheid"-veld. Voor
+  een andere hoeveelheid gebruikt de gebruiker scannen/zoeken (die wél een
+  hoeveelheid-stap tonen). Eenvoudig uit te breiden met een
+  `default_quantity_grams`-kolom als 100 g in de praktijk vaak niet klopt.
+- **`User-Agent`-header op web**: browsers behandelen `User-Agent` als
+  "forbidden header" in `fetch` en laten 'm stilzwijgend vallen — Open Food
+  Facts' verzoek om een beschrijvende header wordt dus alleen op native
+  (iOS/Android) daadwerkelijk gehonoreerd, niet in de web-build.
+- **Camera-permissiestring is Nederlands, de rest van de systeem-UI-strings
+  in `app.json`/`Info.plist` zijn dat historisch ook al** (consistent met
+  de rest van de app, die uitsluitend Nederlandstalig is).
+
 ## Niet gebouwd (bewust, voor latere fases)
 
-Wearables, voeding, social features, AI-chat, een vrije van-nul-af-aan
+Wearables, social features, AI-chat, een vrije van-nul-af-aan
 schema-builder (zie hierboven — bewerken van een bestaand gegenereerd
-schema is er wel), meertaligheid — zoals in de opdracht vermeld, hier niet
-aangeraakt.
+schema is er wel), meertaligheid, microvoeding/vitamines (voeding zelf is
+sinds stap 10 wel gebouwd: calorieën + macro's) — zoals in de opdracht
+vermeld, hier niet aangeraakt.
 
 ## Projectstructuur
 
@@ -992,11 +1131,12 @@ app/                        Expo Router routes
   (onboarding)/
     index.tsx                  Intake-wizard: streeffysiek, basismetingen (+BMI), voorkeuren, samenvatting
   (tabs)/
-    _layout.tsx                Tab navigator: Vandaag / Schema / Progressie / Profiel
+    _layout.tsx                Tab navigator: Vandaag / Schema / Voeding / Progressie / Profiel
     index.tsx                   "Vandaag": eerstvolgend dagschema + "Start workout"
     schema.tsx                  "Schema": dagen/oefeningen bekijken, bewerken, vervangen, herordenen, toevoegen/verwijderen
-    progress.tsx                 "Progressie": kerncijfers, per-oefening links, aanpassingstijdlijn-preview
-    profile.tsx                  "Profiel": profielgegevens + lichaamsmetingen bewerken, uitloggen
+    nutrition.tsx                "Voeding": dagoverzicht vs. calorie-/macrodoel, scannen/zoeken, recent/favorieten, dag-log
+    progress.tsx                 "Progressie": kerncijfers, per-oefening links, aanpassingstijdlijn-preview, voedingssectie
+    profile.tsx                  "Profiel": profielgegevens + lichaamsmetingen bewerken, OFF-attributie, uitloggen
   workout/
     [dayId].tsx                 Workout-invoer: StrengthLogger + CardioLogger, offline-first
   history/
@@ -1005,6 +1145,8 @@ app/                        Expo Router routes
   adjustment-history.tsx        Uitleg-geschiedenis: alle program_adjustments, per week gegroepeerd
   switch-goal.tsx                Ander streeffysiek/doel kiezen: PhysiquePicker + bevestiging, archiveert oud programma
   faq.tsx                        "Wetenschap": doorzoekbare, categoriseerbare FAQ met bronvermelding
+  food-scan.tsx                  Barcode scannen (expo-camera) -> OFF-cache-opzoeking -> FoodLogForm
+  food-search.tsx                Naam zoeken (expliciete actie, geen live type-ahead) -> FoodLogForm
 src/
   components/
     SyncStatusBadge.tsx        Offline / N niet gesynchroniseerd / Gesynchroniseerd — workout + Vandaag
@@ -1015,6 +1157,8 @@ src/
     PhysiquePicker.tsx            Het ene streeffysiek-keuzescherm — onboarding, profiel-edit én switch-goal delen dit
     RecoveryIndicator.tsx          Kleurenbolletje + label voor de supercompensatie-status per spiergroep
     icons.tsx                    Dependency-vrije SVG-icoonset (tab-iconen + PhysiqueSilhouette-placeholder)
+    NutrientProgressBar.tsx       Gevulde-balk voortgang voor een dagtotaal (calorieën/macro) t.o.v. doel
+    FoodLogForm.tsx                Gedeeld door scan/zoeken/handmatig: hoeveelheid + macro-preview + loggen + favoriet
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
     auth.tsx                   AuthProvider + useAuth hook
@@ -1042,6 +1186,14 @@ src/
     recovery.ts                   fetchRecoveryEstimate() — cross-programma laatste-sessie-lookup + estimateRecoveryState()
     faqContent.ts                 FAQ_ENTRIES + searchFaqEntries() — gestructureerde, doorzoekbare FAQ-content
     faqContent.test.ts             Controleert dat elke FAQ-entry minstens één bron met geldige url/auteur/jaar heeft
+    openFoodFacts.ts               fetchProductByBarcode() (v2) / searchProductsByName() (v1) — read-only OFF-client
+    foodProducts.ts                fetchProductWithCache() — Supabase-cache vóór elke OFF-aanroep
+    nutritionTargets.ts            computeUserNutritionTargets() — koppelt profile+laatste meting aan de pure engine
+    foodLogs.ts                    logFood (offline-wachtrij) / fetchFoodLogsForDate / fetchRecentFoodLogs / fetchRecentDailyProteinTotals / deleteFoodLog
+    foodFavorites.ts               fetchFavorites / addFavorite / removeFavorite
+    proteinSignal.ts               checkProteinShortfall() — koppelt detectProteinShortfall aan profile/doel
+    searchThrottle.ts / searchThrottle.test.ts
+                                  canSearchNow() — pure debounce-guard voor het zoekscherm
   theme/
     colors.ts                  Donker kleurenpalet (uitgebreid met surfaceElevated/warning/muted-varianten)
     spacing.ts / radii.ts / typography.ts
@@ -1079,12 +1231,23 @@ packages/
       evaluate.test.ts
       apply.test.ts
       distribute.test.ts
+  nutrition-engine/           Pure, framework-onafhankelijke calorie-/macroberekening
+    src/
+      types.ts
+      targets.ts                 calculateNutritionTargets() + per-doel config-tabellen + activiteitsmultiplier
+      proteinShortfall.ts          detectProteinShortfall()
+      scale.ts                    scaleNutrients() — per-100g -> gelogde hoeveelheid
+    tests/
+      targets.test.ts
+      proteinShortfall.test.ts
+      scale.test.ts
 supabase/
   migrations/
     0001_init.sql              Volledig Fase 1-datamodel + RLS
     0002_adaptation_planner.sql  Weekteller, is_active op program_days, week_number/is_deload + insert-policy
     0003_physique_and_measurements.sql
                                  target_physique/gender/birth_year/target_weight_kg op profiles + body_measurements-tabel
+    0004_nutrition.sql          food_products (gedeelde OFF-cache) + food_logs + food_favorites + RLS
 vitest.config.ts               Root-scope testrunner voor pure src/lib-modules (src/**/*.test.ts), naast de package-tests
 ```
 

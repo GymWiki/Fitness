@@ -1,31 +1,43 @@
+import type { NutritionTargets } from '@fitness/nutrition-engine';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
 import { ChevronRightIcon } from '@/components/icons';
+import { LineChart, type ChartPoint } from '@/components/LineChart';
 import { StatTile } from '@/components/StatTile';
 import { adjustmentTitle } from '@/lib/adjustmentLabels';
 import { fetchAdjustmentHistory, type AdjustmentHistoryEntry } from '@/lib/adjustmentHistory';
 import { useAuth } from '@/lib/auth';
 import { formatShortDate } from '@/lib/dates';
+import { fetchRecentDailyProteinTotals } from '@/lib/foodLogs';
+import { fetchMeasurementHistory } from '@/lib/measurements';
+import { computeUserNutritionTargets } from '@/lib/nutritionTargets';
+import { useProfile } from '@/lib/profile';
 import { fetchActiveProgram, type ActiveProgram } from '@/lib/programs';
 import { fetchLongestStreak, fetchMonthlyWorkoutCount, fetchWeeklyVolume } from '@/lib/progressStats';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { typography } from '@/theme/typography';
 
+const PROTEIN_TREND_DAYS = 14;
+
 const ADJUSTMENT_PREVIEW_COUNT = 3;
 
 export default function ProgressScreen() {
   const { session } = useAuth();
+  const { profile } = useProfile();
   const router = useRouter();
+  const { width: windowWidth } = useWindowDimensions();
 
   const [program, setProgram] = useState<ActiveProgram | null>(null);
   const [weeklyVolume, setWeeklyVolume] = useState<number | null>(null);
   const [monthlyWorkouts, setMonthlyWorkouts] = useState<number | null>(null);
   const [longestStreak, setLongestStreak] = useState<number | null>(null);
   const [adjustments, setAdjustments] = useState<AdjustmentHistoryEntry[]>([]);
+  const [proteinPoints, setProteinPoints] = useState<ChartPoint[]>([]);
+  const [nutritionTargets, setNutritionTargets] = useState<NutritionTargets | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,7 +65,24 @@ export default function ProgressScreen() {
       setError('Kon je progressie niet laden.');
     }
     setIsLoading(false);
-  }, [session]);
+
+    // Nutrition is its own section, deliberately not merged with the training stats above —
+    // a failure here never blocks the rest of Progressie from showing.
+    if (profile) {
+      try {
+        const [proteinTotals, measurements] = await Promise.all([
+          fetchRecentDailyProteinTotals(userId, PROTEIN_TREND_DAYS),
+          fetchMeasurementHistory(userId),
+        ]);
+        setProteinPoints(proteinTotals.map((entry) => ({ date: entry.date, value: entry.proteinGrams })));
+        const latest = measurements[measurements.length - 1] ?? null;
+        setNutritionTargets(computeUserNutritionTargets(profile, latest));
+      } catch {
+        setProteinPoints([]);
+        setNutritionTargets(null);
+      }
+    }
+  }, [session, profile]);
 
   useFocusEffect(
     useCallback(() => {
@@ -83,6 +112,18 @@ export default function ProgressScreen() {
               <StatTile label="Trainingen deze maand" value={monthlyWorkouts !== null ? String(monthlyWorkouts) : '–'} />
               <StatTile label="Langste streak" value={longestStreak !== null ? `${longestStreak} wk` : '–'} />
             </View>
+
+            <Text style={styles.sectionTitle}>Voeding</Text>
+            {proteinPoints.length > 1 ? (
+              <>
+                {nutritionTargets && (
+                  <Text style={styles.nutritionCaption}>Eiwitdoel: {nutritionTargets.proteinGrams}g/dag</Text>
+                )}
+                <LineChart points={proteinPoints} width={Math.min(windowWidth - 80, 480)} unit="g" />
+              </>
+            ) : (
+              <EmptyState title="Nog geen voedingstrend" body="Log een paar dagen op de Voeding-tab om hier je eiwitinname over tijd te zien." />
+            )}
 
             <Text style={styles.sectionTitle}>Per oefening</Text>
             {exercises.length === 0 && <EmptyState title="Nog geen oefeningen" body="Zodra je programma actief is, zie je hier per oefening je ontwikkeling." />}
@@ -128,6 +169,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  nutritionCaption: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginBottom: spacing.xs,
   },
   content: {
     padding: spacing.xxl,
