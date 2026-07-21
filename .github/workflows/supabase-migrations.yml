@@ -47,3 +47,31 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+
+      # Regression test for the "search returns zero results" bug: Open Food
+      # Facts silently broke the search endpoint food-proxy used to call
+      # (global 5xx on the legacy `cgi/search.pl`), which never surfaced as a
+      # deploy failure since the function itself deployed fine. This calls
+      # the *live* function with a known-good term so a future upstream
+      # break (or a regression in our own code) fails the build instead of
+      # only showing up as "no results" inside the app.
+      - name: Smoke test food search
+        run: |
+          ANON_KEY=$(supabase projects api-keys --project-ref "$SUPABASE_PROJECT_REF" -o json | jq -r '.[] | select(.name=="anon") | .api_key')
+          STATUS=$(curl -sS -o /tmp/food-search-response.json -w "%{http_code}" -X POST \
+            "https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/food-proxy" \
+            -H "Authorization: Bearer $ANON_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"type":"search","query":"Kwark"}')
+          echo "Status: $STATUS"
+          cat /tmp/food-search-response.json
+          echo
+          PRODUCT_COUNT=$(jq '.products | length' /tmp/food-search-response.json)
+          if [ "$STATUS" != "200" ] || [ "$PRODUCT_COUNT" -lt 1 ]; then
+            echo "Food search smoke test failed (status=$STATUS, products=$PRODUCT_COUNT)"
+            exit 1
+          fi
+          echo "OK: $PRODUCT_COUNT products found for 'Kwark'"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
