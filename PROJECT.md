@@ -503,6 +503,87 @@ UI). Root `vitest.config.ts` kreeg een `@`-alias-resolutie (mirrorend
 `tsconfig.json`'s `paths`) zodat `src/lib`-tests ook modules met een
 `@/theme/...`-import kunnen laden.
 
+**Bugfix (na stap 10): "Failed to fetch" bij voedsel zoeken op de
+webversie.**
+
+*Diagnose (bevestigd).* `src/lib/openFoodFacts.ts` riep
+`world.openfoodfacts.org` rechtstreeks vanuit clientcode aan — een
+cross-origin `fetch()` vanuit de browser waar Open Food Facts geen CORS
+voor deze origin voor teruggeeft, dus de browser blokkeert de request vóór
+er een response terugkomt. De destijds al gedocumenteerde kanttekening
+("`User-Agent` wordt door de browser stilzwijgend laten vallen") was hier
+niet eens de kern van het probleem — CORS blokkeert de request al eerder,
+dus zelfs een geslaagde header-configuratie had dit niet opgelost. Bewijs:
+alleen client-side code deed de fetch, er was geen server-side tussenstation.
+
+*Fix: server-side proxy via een Supabase Edge Function (niet Vercel).*
+Geen bestaande Vercel-configuratie, API-routes of Next.js in deze repo —
+het is een statische Expo-webexport. De hele backend is al Supabase
+(auth, RLS, migraties, CI), en een Edge Function is straks identiek
+bereikbaar voor zowel web als native via dezelfde `supabase-js`-client,
+in tegenstelling tot een Vercel-only API-route. Nieuwe
+`supabase/functions/food-proxy/index.ts` (Deno):
+- Neemt twee requesttypes aan (`{type:'product', barcode}` /
+  `{type:'search', query}`), stuurt door naar de juiste OFF-endpoint (v2
+  product-lookup resp. v1 zoeken), en zet de beschrijvende `User-Agent`
+  hier server-side, waar hij daadwerkelijk effect heeft.
+- Forwardt de JWT van de aanroeper naar zijn eigen Supabase-client in
+  plaats van de service-role-key te gebruiken — `food_products`'s RLS stond
+  al toe dat elke ingelogde gebruiker leest/schrijft (het is een gedeelde,
+  niet-persoonlijke cache van publieke OFF-data), dus dit is exact
+  hetzelfde toegangsniveau als een directe client-write, alleen via de
+  proxy.
+- Cachet: een barcode-opvraging checkt `food_products` eerst en roept OFF
+  alleen aan bij een cache-miss; een zoekopdracht schrijft elk gevonden
+  product weg in diezelfde cache, zodat een latere barcode-scan van een van
+  die producten al een cache-hit is (breidt de al geplande caching uit naar
+  het zoekpad, zoals gevraagd).
+- Retourneert exact dezelfde OFF-vormgegeven JSON als voorheen (`{status,
+  product}` / `{products}`), dus de bestaande `parseProduct()`/
+  `parseNutriments()`-parsing in `openFoodFacts.ts` hoefde niet te
+  veranderen — alleen wélke URL aangeroepen wordt.
+- Zet CORS-headers op elke response, inclusief foutresponses, en geeft een
+  nette Nederlandse foutmelding terug bij een mislukte upstream-call in
+  plaats van de rauwe fetch-fout door te laten.
+
+*Bewuste keuze: geen server-side rate limiter.* De opdracht noemde dit
+optioneel ("eventueel"). Een edge-function draait op gedistribueerde,
+stateless instanties — een in-memory teller zou geen betrouwbare,
+project-brede limiet geven, alleen schijnzekerheid. In plaats daarvan
+blijft de bestaande, al geteste client-side `canSearchNow()`-throttle de
+verdediging tegen te snel achter elkaar zoeken, aangevuld met de
+`food_products`-cache die herhaalde barcode-opvragingen sowieso al buiten
+OFF om afhandelt.
+
+`openFoodFacts.ts` roept nu `supabase.functions.invoke('food-proxy', ...)`
+aan (dezelfde client als de rest van de app, inclusief automatische
+auth-header) in plaats van een handmatige `fetch()` met timeout — de
+timeout-logica verviel, consistent met hoe geen andere Supabase-aanroep in
+de app een eigen timeout heeft. `.github/workflows/supabase-migrations.yml`
+(hernoemd naar "Deploy Supabase migrations and edge functions") kreeg een
+extra stap (`supabase functions deploy food-proxy`) en een extra
+path-trigger (`supabase/functions/**`), zodat de functie automatisch
+meegaat bij een merge naar main — zelfde automatiseringsprincipe als de
+migratie-pipeline uit een eerdere sessie ("code in de repo die nooit
+gedeployed wordt lost niets op").
+
+*Tests.* Nieuw `openFoodFacts.test.ts` (10 tests, zelfde
+hand-rolled-mock-patroon als `switchGoal.test.ts`): bevestigt dat de
+proxy wordt aangeroepen met het juiste requesttype (nooit meer OFF
+rechtstreeks), dat een gevonden product correct wordt geparsed, dat een
+`status:0`-barcode `null` geeft (geen fout), dat een mislukte
+functie-invoke een nette Nederlandse foutmelding geeft in plaats van de
+rauwe fetch-fout, dat de proxy's eigen foutbericht wordt doorgegeven, dat
+meerdere zoekresultaten correct parsen, dat een lege zoekopdracht
+helemaal geen aanroep doet, en dat resultaten zonder barcode worden
+overgeslagen in plaats van te crashen. De Deno-functiecode zelf heeft geen
+directe testdekking (geen Deno-testrunner in deze repo, buiten scope om
+toe te voegen voor deze bugfix) — de contractvorm (requestshape,
+responseshape) is wel dichtgetimmerd via de client-tests hierboven.
+**Handmatige verificatie na deploy is nog nodig**: zoeken op "Kwark" op de
+live webbuild controleren zodra deze PR gemerged en de CI-deploy geslaagd
+is.
+
 ## Architectuurkeuzes gemaakt in deze sessie
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
@@ -1191,7 +1272,7 @@ vermeld, hier niet aangeraakt.
 ```
 .github/
   workflows/
-    supabase-migrations.yml  Past supabase/migrations/*.sql toe op main bij wijzigingen (zie CI/CD-sectie)
+    supabase-migrations.yml  Past supabase/migrations/*.sql toe + deployt supabase/functions/* op main bij wijzigingen (zie CI/CD-sectie)
 app/                        Expo Router routes
   _layout.tsx                Root layout: Auth-/ProfileProvider + 3-weg Stack.Protected gate
   (auth)/
@@ -1260,7 +1341,8 @@ src/
                                   Regiogeometrie per spiergroep (voor/achter) + describeRegionTap()
     faqContent.ts                 FAQ_ENTRIES + searchFaqEntries() — gestructureerde, doorzoekbare FAQ-content
     faqContent.test.ts             Controleert dat elke FAQ-entry minstens één bron met geldige url/auteur/jaar heeft
-    openFoodFacts.ts               fetchProductByBarcode() (v2) / searchProductsByName() (v1) — read-only OFF-client
+    openFoodFacts.ts / openFoodFacts.test.ts
+                                  fetchProductByBarcode() / searchProductsByName() — roept de food-proxy edge function aan, nooit OFF rechtstreeks (CORS)
     foodProducts.ts                fetchProductWithCache() — Supabase-cache vóór elke OFF-aanroep
     nutritionTargets.ts            computeUserNutritionTargets() — koppelt profile+laatste meting aan de pure engine
     foodLogs.ts                    logFood (offline-wachtrij) / fetchFoodLogsForDate / fetchRecentFoodLogs / fetchRecentDailyProteinTotals / deleteFoodLog
@@ -1322,20 +1404,26 @@ supabase/
     0003_physique_and_measurements.sql
                                  target_physique/gender/birth_year/target_weight_kg op profiles + body_measurements-tabel
     0004_nutrition.sql          food_products (gedeelde OFF-cache) + food_logs + food_favorites + RLS
+  functions/
+    food-proxy/index.ts        Server-side proxy naar Open Food Facts (CORS-fix) — cachet in food_products, zet User-Agent server-side
 vitest.config.ts               Root-scope testrunner voor pure src/lib-modules (src/**/*.test.ts), naast de package-tests
 ```
 
-## CI/CD: migraties automatisch toepassen
+## CI/CD: migraties en edge functions automatisch toepassen
 
-`.github/workflows/supabase-migrations.yml` draait `supabase db push` zodra
-een merge naar `main` bestanden in `supabase/migrations/` wijzigt (plus een
-handmatige "Run workflow"-knop in de Actions-tab voor als je 'm meteen wilt
-draaien zonder nieuwe commit). Dit bestaat specifiek omdat migratie 0003 een
-hele sessie lang in de repo stond zonder ooit toegepast te zijn — er was
-geen enkel automatisch signaal dat dat was misgegaan, alleen een bug
-downstream die er niets mee te maken leek te hebben. `supabase db push` is
-idempotent (past alleen migraties toe die nog niet in de remote
-migratiehistorie staan), dus opnieuw draaien is altijd veilig.
+`.github/workflows/supabase-migrations.yml` draait `supabase db push` én
+`supabase functions deploy food-proxy` zodra een merge naar `main`
+bestanden in `supabase/migrations/` of `supabase/functions/` wijzigt (plus
+een handmatige "Run workflow"-knop in de Actions-tab voor als je 'm meteen
+wilt draaien zonder nieuwe commit). De migratie-automatisering bestaat
+specifiek omdat migratie 0003 een hele sessie lang in de repo stond zonder
+ooit toegepast te zijn — er was geen enkel automatisch signaal dat dat was
+misgegaan, alleen een bug downstream die er niets mee te maken leek te
+hebben. Dezelfde reden gold voor de edge function toevoegen: functiecode in
+de repo lost niets op als niemand hem ooit daadwerkelijk deployt. Beide
+commando's zijn idempotent (migraties: past alleen toe wat nog niet in de
+remote historie staat; functions deploy: overschrijft gewoon de vorige
+versie), dus opnieuw draaien is altijd veilig.
 
 **Vereist drie repository secrets** (Settings → Secrets and variables →
 Actions → "New repository secret") — die kan ik niet zelf toevoegen, dat
@@ -1356,7 +1444,7 @@ Actions-tab (in plaats van stil niets te doen), dus het ergste geval is
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages + root src/lib samen (99 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (184 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```

@@ -1,16 +1,22 @@
-name: Deploy Supabase migrations
+name: Deploy Supabase migrations and edge functions
 
-# Applies supabase/migrations/*.sql to the live database whenever a merge to
-# main changes that folder. This exists because migration 0003 sat in the
-# repo for a full session without ever being applied to production — there
-# was no automation catching that, only a symptom (a schema-switch bug) far
-# downstream. `supabase db push` is idempotent: it only applies migrations
-# not yet recorded in the remote history table, so re-runs are always safe.
+# Applies supabase/migrations/*.sql and deploys supabase/functions/* to the
+# live project whenever a merge to main changes either folder. This exists
+# because migration 0003 sat in the repo for a full session without ever
+# being applied to production — there was no automation catching that, only
+# a symptom (a schema-switch bug) far downstream. `supabase db push` is
+# idempotent: it only applies migrations not yet recorded in the remote
+# history table, so re-runs are always safe. `supabase functions deploy`
+# is likewise safe to re-run — same reasoning extended to the food-proxy
+# edge function (see PROJECT.md): its code living in the repo is worthless
+# if nothing ever ships it to Supabase, so that step is automated too
+# instead of depending on someone remembering to run the CLI by hand.
 on:
   push:
     branches: [main]
     paths:
       - "supabase/migrations/**"
+      - "supabase/functions/**"
   workflow_dispatch: {}
 
 jobs:
@@ -35,3 +41,9 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      - name: Deploy edge functions
+        run: supabase functions deploy food-proxy --project-ref "$SUPABASE_PROJECT_REF"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}

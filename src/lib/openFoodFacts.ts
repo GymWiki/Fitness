@@ -1,22 +1,23 @@
+import { supabase } from './supabase';
+
 /**
- * Thin, read-only client for the Open Food Facts API (https://openfoodfacts.org,
- * ODbL-licensed, no API key required). Two endpoints only, per their docs:
- * - Barcode lookup: v2 product API.
- * - Name search: the older v1 `cgi/search.pl` endpoint — v2 doesn't support
- *   full-text search yet.
+ * Client for the `food-proxy` Supabase Edge Function — never calls Open
+ * Food Facts directly. A direct browser `fetch()` to world.openfoodfacts.org
+ * fails on the deployed web build with "Failed to fetch": it's a
+ * cross-origin request OFF doesn't grant this origin CORS for, and the
+ * descriptive `User-Agent` header OFF's API guidelines ask for is a
+ * browser-forbidden header anyway (silently dropped, so even a request
+ * that got through wouldn't have been spec-compliant). Routing through our
+ * own Edge Function (`supabase/functions/food-proxy`) fixes both: the
+ * browser only ever talks to our own Supabase project, and the
+ * `User-Agent` is set server-side, where it actually takes effect.
  *
- * Rate limits (per OFF's guidance): 15 req/min for product lookups, 10
- * req/min for search. This client does not itself throttle — callers are
- * responsible for that (see the debounced/explicit-search UI, and
- * `foodProducts.ts`'s cache, which is what keeps barcode re-scans off the
- * network entirely).
- *
- * A descriptive User-Agent is sent as OFF requests, though note that browser
- * `fetch` treats `User-Agent` as a forbidden header and silently drops it on
- * web — this only takes effect on native (iOS/Android).
+ * `supabase.functions.invoke()` handles the auth header and CORS-safe
+ * origin automatically (same client already used for every other Supabase
+ * call in this app). The function returns Open Food Facts' own response
+ * shape unchanged, so the parsing below is identical to when this file
+ * used to call OFF directly.
  */
-const USER_AGENT = 'AdaptiveFitnessApp/1.0 (Expo React Native; +https://github.com/GymWiki/Fitness)';
-const REQUEST_TIMEOUT_MS = 10_000;
 
 export interface OpenFoodFactsProduct {
   barcode: string;
@@ -26,16 +27,6 @@ export interface OpenFoodFactsProduct {
   proteinPer100g: number | null;
   carbsPer100g: number | null;
   fatPer100g: number | null;
-}
-
-async function fetchWithTimeout(url: string): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    return await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 /** Data is community-entered and often incomplete — every nutriment field defensively falls back to null rather than throwing. */
@@ -64,41 +55,40 @@ function parseProduct(barcode: string, raw: Record<string, unknown>): OpenFoodFa
   };
 }
 
+async function invokeFoodProxy<T>(payload: { type: 'product'; barcode: string } | { type: 'search'; query: string }): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('food-proxy', { body: payload });
+  if (error) throw new Error('Zoeken lukte niet, probeer het opnieuw.');
+  if (data && typeof data === 'object' && 'error' in data && typeof (data as { error?: unknown }).error === 'string') {
+    throw new Error((data as { error: string }).error);
+  }
+  return data as T;
+}
+
 /**
  * Looks up a single product by barcode. Returns `null` (not an error) when
  * Open Food Facts doesn't have the barcode (`status: 0`) — the caller falls
  * back to manual entry rather than showing a hard failure.
  */
 export async function fetchProductByBarcode(barcode: string): Promise<OpenFoodFactsProduct | null> {
-  const response = await fetchWithTimeout(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`);
-  if (!response.ok) throw new Error(`Open Food Facts gaf een fout terug (${response.status}).`);
-  const body = (await response.json()) as { status: number; product?: Record<string, unknown> };
+  const body = await invokeFoodProxy<{ status: number; product?: Record<string, unknown> }>({ type: 'product', barcode });
   if (body.status === 0 || !body.product) return null;
   return parseProduct(barcode, body.product);
 }
 
-const SEARCH_PAGE_SIZE = 20;
-
 /**
- * Full-text search by product name (v1 API — v2 has no search endpoint yet).
- * Callers must NOT call this per keystroke: debounce/explicit-search is the
- * UI's responsibility, this function does no throttling of its own.
+ * Full-text search by product name. Callers must NOT call this per
+ * keystroke: debounce/explicit-search is the UI's responsibility (see
+ * `searchThrottle.ts`), this function does no throttling of its own — the
+ * edge function it calls does no server-side throttling either (see
+ * PROJECT.md for why: a distributed edge runtime can't reliably rate-limit
+ * across instances, so this relies on the existing per-client throttle plus
+ * the shared `food_products` cache to keep OFF traffic down).
  */
 export async function searchProductsByName(query: string): Promise<OpenFoodFactsProduct[]> {
   const trimmed = query.trim();
   if (trimmed === '') return [];
 
-  const params = new URLSearchParams({
-    search_terms: trimmed,
-    search_simple: '1',
-    action: 'process',
-    json: '1',
-    page_size: String(SEARCH_PAGE_SIZE),
-  });
-  const response = await fetchWithTimeout(`https://world.openfoodfacts.org/cgi/search.pl?${params.toString()}`);
-  if (!response.ok) throw new Error(`Open Food Facts gaf een fout terug (${response.status}).`);
-  const body = (await response.json()) as { products?: Array<Record<string, unknown>> };
-
+  const body = await invokeFoodProxy<{ products?: Array<Record<string, unknown>> }>({ type: 'search', query: trimmed });
   return (body.products ?? [])
     .filter((raw): raw is Record<string, unknown> & { code: string } => typeof raw.code === 'string' && raw.code !== '')
     .map((raw) => parseProduct(raw.code, raw));
