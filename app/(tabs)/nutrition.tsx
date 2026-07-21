@@ -125,10 +125,12 @@ export default function NutritionScreen() {
             {targets ? (
               <Card style={styles.summaryCard} elevated>
                 <Text style={styles.sectionTitle}>Vandaag</Text>
-                <NutrientProgressBar label="Calorieën" current={summary.calories} target={targets.calories} unit=" kcal" />
-                <NutrientProgressBar label="Eiwit" current={summary.proteinGrams} target={targets.proteinGrams} unit="g" />
-                <NutrientProgressBar label="Koolhydraten" current={summary.carbsGrams} target={targets.carbGrams} unit="g" />
-                <NutrientProgressBar label="Vet" current={summary.fatGrams} target={targets.fatGrams} unit="g" />
+                <NutrientProgressBar label="Calorieën" current={summary.calories} target={targets.calories} unit=" kcal" size="large" />
+                <View style={styles.macroBarGroup}>
+                  <NutrientProgressBar label="Eiwit" current={summary.proteinGrams} target={targets.proteinGrams} unit="g" />
+                  <NutrientProgressBar label="Koolhydraten" current={summary.carbsGrams} target={targets.carbGrams} unit="g" />
+                  <NutrientProgressBar label="Vet" current={summary.fatGrams} target={targets.fatGrams} unit="g" />
+                </View>
                 <Text style={styles.disclaimer}>
                   Richtlijn op basis van je lichaamsmetingen en trainingsdoel, geen medisch advies.
                 </Text>
@@ -265,6 +267,9 @@ const styles = StyleSheet.create({
   summaryCard: {
     gap: spacing.md,
     marginBottom: spacing.sm,
+  },
+  macroBarGroup: {
+    gap: spacing.md,
   },
   sectionTitle: {
     ...typography.heading,
