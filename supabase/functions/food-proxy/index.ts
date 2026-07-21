@@ -135,17 +135,19 @@ async function handleSearch(supabaseClient: ReturnType<typeof createClient>, que
   const trimmed = query.trim();
   if (!trimmed) return jsonResponse({ products: [] });
 
+  // The legacy `cgi/search.pl` (v1) full-text search now returns 5xx globally —
+  // Open Food Facts deprecated it in favor of the Elasticsearch-backed
+  // search-a-licious service. `/api/v2/search` (used for barcode lookups) never
+  // supported free-text search, so it's not an option here either.
   const params = new URLSearchParams({
-    search_terms: trimmed,
-    search_simple: '1',
-    action: 'process',
-    json: '1',
+    q: trimmed,
     page_size: String(SEARCH_PAGE_SIZE),
+    langs: 'nl,en',
   });
 
   let offResponse: Response;
   try {
-    offResponse = await fetch(`https://world.openfoodfacts.org/cgi/search.pl?${params.toString()}`, {
+    offResponse = await fetch(`https://search.openfoodfacts.org/search?${params.toString()}`, {
       headers: { 'User-Agent': USER_AGENT },
     });
   } catch {
@@ -153,8 +155,11 @@ async function handleSearch(supabaseClient: ReturnType<typeof createClient>, que
   }
   if (!offResponse.ok) return errorResponse('Zoeken lukte niet. Probeer het opnieuw.');
 
-  const body = (await offResponse.json()) as { products?: OffProduct[] };
-  const products = Array.isArray(body.products) ? body.products : [];
+  // search-a-licious returns matches under `hits`, each hit being the raw
+  // product document (same field names as the classic API: code, product_name,
+  // nutriments, ...), so downstream parsing is unchanged.
+  const body = (await offResponse.json()) as { hits?: OffProduct[] };
+  const products = Array.isArray(body.hits) ? body.hits : [];
 
   // Best-effort: a caching hiccup should never fail the search itself.
   await Promise.allSettled(products.filter((product) => product.code).map((product) => cacheProduct(supabaseClient, product)));

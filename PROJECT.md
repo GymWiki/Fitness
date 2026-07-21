@@ -584,7 +584,50 @@ responseshape) is wel dichtgetimmerd via de client-tests hierboven.
 live webbuild controleren zodra deze PR gemerged en de CI-deploy geslaagd
 is.
 
-## Architectuurkeuzes gemaakt in deze sessie
+**Vervolgbugfix: zoeken gaf 0 resultaten (geen fout meer) na deploy.**
+
+*Diagnose (bevestigd, niet gegokt).* De live `food-proxy`-logs (Supabase
+Dashboard → Edge Functions) toonden voor een echte zoekaanroep een
+`POST | 502`-response — de functie zelf draaide en werd bereikt, maar het
+`fetch()` naar Open Food Facts binnen de functie faalde. De app-code zelf
+bleek géén stille foutafhandeling te hebben (`app/food-search.tsx` toont
+`error` gewoon in de UI bij een gegooide fout) — punt 4 uit de
+diagnosestappen viel dus af. Onderzoek naar de OFF-kant (via externe
+bronnen, want dit sandbox-netwerk staat geen directe calls naar
+`openfoodfacts.org` toe): Open Food Facts heeft de legacy v1
+zoek-endpoint (`cgi/search.pl`, wat deze functie gebruikte) inmiddels
+losgelaten — deze retourneert nu wereldwijd 5xx (bevestigd door een
+onafhankelijk, extern gerapporteerd issue met exact hetzelfde symptoom).
+`/api/v2/product/{barcode}.json` (gebruikt voor barcode-opzoeken) bleef
+wel gewoon werken — dat verklaart waarom alleen zoeken kapot was en
+barcode-scannen niet. Geen mismatch in de response-parsing en geen
+verkeerd endpoint-gebruik in de oorspronkelijke code — puur een endpoint
+dat aan de OFF-kant is uitgefaseerd.
+
+*Fix.* `handleSearch()` in `supabase/functions/food-proxy/index.ts` roept
+nu de nieuwe, door Open Food Facts zelf aangewezen vervanger aan:
+`GET https://search.openfoodfacts.org/search` (search-a-licious,
+Elasticsearch-gebaseerd) met `q`/`page_size`/`langs`-parameters in plaats
+van `cgi/search.pl`'s `search_terms`/`search_simple`/`action`. De
+resultatenlijst zit hier onder `hits` in plaats van `products`, maar elke
+hit is nog steeds hetzelfde ruwe productdocument (`code`, `product_name`,
+`nutriments`, ...) — de proxy leest dit uit en geeft nog altijd
+`{products: [...]}` naar de client terug, dus `openFoodFacts.ts` en de
+bestaande tests hoefden niet te veranderen. De bestaande
+error/lege-staat-scheiding (nette foutmelding bij een niet-ok upstream-
+response versus een leeg `products`-array bij écht geen resultaten) stond
+al goed in de code — dat hoefde niet gerepareerd te worden, alleen het
+endpoint eronder.
+
+*Test (regressiebescherming).* Er is geen Deno-testrunner in deze repo
+(bewuste eerdere keuze), dus in plaats daarvan kreeg
+`.github/workflows/supabase-migrations.yml` een nieuwe stap, "Smoke test
+food search", die na elke deploy de live edge function écht aanroept met
+een bekende zoekterm ("Kwark") en de build laat falen als de response
+geen 200 is of een leeg `products`-array bevat. Dit vangt zowel een
+regressie in onze eigen code als een volgende breaking change aan de
+OFF-kant — precies de klasse fout die deze keer onopgemerkt bleef omdat
+de deploy zelf wél slaagde.
 
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
   platform-onafhankelijk TypeScript-package (geen React Native-, Expo- of
