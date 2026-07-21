@@ -503,6 +503,63 @@ UI). Root `vitest.config.ts` kreeg een `@`-alias-resolutie (mirrorend
 `tsconfig.json`'s `paths`) zodat `src/lib`-tests ook modules met een
 `@/theme/...`-import kunnen laden.
 
+**Verfijning: realistischer anatomisch lichaamsdiagram.**
+
+*Licentie-afweging (gevraagd om eerst te doorlopen).* Geen bestaande
+gelicenseerde asset in dit project om op te bouwen. Een vergelijkbare,
+correct gelicenseerde vector-asset zoeken (stockbibliotheek/royalty-free
+SVG-set) was in deze sandbox niet betrouwbaar te verifiëren — uitgaand
+netwerkverkeer naar willekeurige externe hosts is hier beperkt tot een
+toegestane lijst, dus een aankoop/download-bron kon niet met zekerheid op
+licentie gecontroleerd worden. Om elk licentierisico volledig uit te
+sluiten is gekozen voor **optie 3: een originele illustratie**, met de
+hand geschreven als SVG-path-data (bezier-curves), niet nagetekend van een
+bestaande stockafbeelding — dit is de enige van de drie geboden opties die
+zonder enige externe afhankelijkheid of onzekerheid uitvoerbaar was.
+
+*Wat er veranderde.* `bodyDiagramRegions.ts`: `RegionShape` ondersteunt nu
+alleen nog `{type: 'path', d: string}` (rects/circles helemaal vervangen);
+elk van de 10 spiergroep-vlakken is een eigen, getekende bezier-vorm
+(deltoid-"petal"-vorm voor schouders, een pec-vorm met sternum-inkeping
+voor borst, een getailleerd paneel voor core, tapse capsule-vormen voor
+biceps/triceps/quadriceps/hamstrings/kuiten, een schildvorm voor de
+bilspieren, een trapezius/lats-vorm voor de rug). `BodyDiagram.tsx`:
+`BodyOutline` is een met de hand getekend lichaamssilhouet (hoofd, romp,
+benen als één omtrek; elke arm apart, licht van de romp af — "armen licht
+van het lichaam af" uit de opdracht — met simpele hand-vormen), gedeeld
+tussen voor- en achterkant (dezelfde buitenomtrek, alleen de
+spiervlakken erbovenop verschillen). Het canvas kreeg een eigen lichte
+"poster"-achtergrond (`#F2EFEA`) met donkere contourlijnen (`#1C1C1E`) —
+bewust *niet* afgeleid van `theme/colors.ts`'s donkere basispalet: een
+spierschema leest het best op een eigen lichte achtergrond, zoals ook op
+echte sportschoolposters, en de omringende dark-mode `Card` blijft daar
+omheen gewoon donker. Elk spiervlak heeft nu een eigen zichtbare
+contourlijn (voorheen `stroke: colors.background`, wat vlakken tegen de
+donkere achtergrond liet wegvallen) — dit is precies de "duidelijk
+afgebakende vlakken, geen vage kleurvlek"-eis uit de opdracht.
+
+*Wat gelijk bleef (afbakening).* De herstelkleur-logica
+(`recoveryColor()`), de spiergroep-naar-view-mapping, de
+voorkant-/achterkant-toggle-interactie, de tik-kaart en de legenda zijn
+allemaal ongewijzigd — alleen de illustratie eronder is vervangen. De 20
+bestaande tests (`bodyDiagramRegions.test.ts`, `recoveryColor.test.ts`)
+draaien ongewijzigd door, want ze toetsen de region-naar-spiergroep-
+mapping en kleurlogica, niet de exacte coördinaten.
+
+*Verificatie.* Coördinaten eerst uitgeprobeerd in een losse HTML/SVG-
+prototype (Playwright-screenshot) buiten de repo, daarna 1-op-1
+overgenomen in `bodyDiagramRegions.ts`/`BodyDiagram.tsx`. Om het
+eindresultaat in de daadwerkelijke, gedraaide app te zien zonder in te
+loggen (de auth-gate vereist een echte Supabase-sessie, en dit
+sandbox-netwerk laat geen verbinding naar Supabase toe), is tijdelijk een
+ongeauthenticeerde previewroute toegevoegd (`app/_diagram-preview.tsx` +
+een extra `Stack.Screen` in `app/_layout.tsx`), de web-export gedraaid, en
+via Playwright gescreenshot (voor- en achterkant, plus een tik-op-een-
+spiergroep-test die bevestigde dat de tik-kaart nog steeds de juiste
+spiergroep/status/uitleg toont) — geen consolefouten. Beide tijdelijke
+bestanden/wijzigingen zijn na de verificatie weer volledig teruggedraaid;
+alleen de illustratie-bestanden zelf zijn onderdeel van deze commit.
+
 **Bugfix (na stap 10): "Failed to fetch" bij voedsel zoeken op de
 webversie.**
 
