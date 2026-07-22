@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
+import { EmptyState } from '@/components/EmptyState';
 import { LineChart } from '@/components/LineChart';
 import { useAuth } from '@/lib/auth';
 import { BMI_CATEGORY_LABELS, bmiCategory, calculateBmi } from '@/lib/bmi';
@@ -13,6 +14,7 @@ import { GOAL_LABELS, physiqueOption } from '@/lib/physique';
 import { fetchProgramHistory, type ProgramHistoryEntry } from '@/lib/programs';
 import { updateProfile, useProfile } from '@/lib/profile';
 import { colors } from '@/theme/colors';
+import { layout } from '@/theme/layout';
 import { radii } from '@/theme/radii';
 import { spacing } from '@/theme/spacing';
 import { typography } from '@/theme/typography';
@@ -228,7 +230,7 @@ export default function ProfileScreen() {
           <Card style={styles.viewCard}>
             <View style={styles.viewHeaderRow}>
               <Text style={styles.sectionTitle}>Jouw gegevens</Text>
-              <Pressable onPress={() => setIsEditingProfile(true)}>
+              <Pressable onPress={() => setIsEditingProfile(true)} hitSlop={8}>
                 <Text style={styles.editLink}>Bewerken</Text>
               </Pressable>
             </View>
@@ -237,7 +239,7 @@ export default function ProfileScreen() {
             <InfoRow label="Ervaring" value={EXPERIENCE_OPTIONS.find((o) => o.value === profile.experienceLevel)?.label ?? '–'} />
             <InfoRow label="Dagen per week" value={String(profile.daysPerWeek)} />
             <InfoRow label="Materiaal" value={EQUIPMENT_OPTIONS.find((o) => o.value === profile.equipment)?.label ?? '–'} />
-            <Pressable onPress={() => router.push('/switch-goal')}>
+            <Pressable onPress={() => router.push('/switch-goal')} hitSlop={8}>
               <Text style={styles.switchGoalLink}>Ander doel kiezen</Text>
             </Pressable>
           </Card>
@@ -248,7 +250,7 @@ export default function ProfileScreen() {
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Lichaamsmetingen</Text>
           {!isAddingMeasurement && (
-            <Pressable onPress={() => setIsAddingMeasurement(true)}>
+            <Pressable onPress={() => setIsAddingMeasurement(true)} hitSlop={8}>
               <Text style={styles.editLink}>Nieuwe meting</Text>
             </Pressable>
           )}
@@ -277,7 +279,7 @@ export default function ProfileScreen() {
         )}
 
         {!isLoadingMeasurements && !latest && !isAddingMeasurement && (
-          <Text style={styles.body}>Nog geen metingen gelogd.</Text>
+          <EmptyState title="Nog geen metingen" body="Log je gewicht en lengte om je voortgang over tijd te zien." />
         )}
 
         {programHistory.length > 1 && (
@@ -333,7 +335,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.xxl,
-    paddingTop: 48,
+    paddingTop: layout.tabScreenPaddingTop,
     gap: spacing.md,
   },
   title: {
@@ -472,9 +474,9 @@ const styles = StyleSheet.create({
     color: colors.accent,
   },
   dayButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceElevated,
@@ -487,7 +489,7 @@ const styles = StyleSheet.create({
   },
   dayButtonText: {
     color: colors.textPrimary,
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
   },
   error: {

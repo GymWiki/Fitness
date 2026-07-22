@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet } from 'react-native';
 import Svg, { Line as SvgLine, Polyline, Polygon, Circle, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { recoveryColor } from '@/lib/recoveryColor';
+import { useReducedMotion } from '@/lib/useReducedMotion';
 import { colors } from '@/theme/colors';
 import { radii } from '@/theme/radii';
 import { spacing } from '@/theme/spacing';
@@ -57,11 +58,16 @@ function areaPoints(points: RecoveryCurvePoint[], baselineY: number, hoursToX: (
  */
 export function RecoveryCurveChart({ curve, estimate, width }: { curve: RecoveryCurve; estimate: RecoveryEstimate; width: number }) {
   const fade = useRef(new Animated.Value(1)).current;
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
+    if (reducedMotion) {
+      fade.setValue(1);
+      return;
+    }
     fade.setValue(0.3);
     Animated.timing(fade, { toValue: 1, duration: 220, useNativeDriver: true }).start();
-  }, [curve.muscleGroup, fade]);
+  }, [curve.muscleGroup, fade, reducedMotion]);
 
   const maxHours = Math.max(curve.now.hoursFromSession, ...curve.points.map((point) => point.hoursFromSession));
   const levels = [...curve.points.map((point) => point.level), curve.now.level, curve.baseline];

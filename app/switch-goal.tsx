@@ -1,9 +1,10 @@
 import { CARDIO_BASELINE_BY_GOAL } from '@fitness/program-generator';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
+import { ModalHeader } from '@/components/ModalHeader';
 import { PhysiquePicker } from '@/components/PhysiquePicker';
 import { useAuth } from '@/lib/auth';
 import { describeError } from '@/lib/describeError';
@@ -12,7 +13,6 @@ import { useProfile } from '@/lib/profile';
 import { switchGoal } from '@/lib/switchGoal';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
-import { typography } from '@/theme/typography';
 
 export default function SwitchGoalScreen() {
   const router = useRouter();
@@ -47,18 +47,11 @@ export default function SwitchGoalScreen() {
 
   return (
     <View style={styles.container}>
+      <ModalHeader
+        title="Ander doel kiezen"
+        subtitle="Je huidige streeffysiek is gemarkeerd. Kies een nieuw doel om over te stappen naar een ander schema."
+      />
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()}>
-            <Text style={styles.closeButton}>Sluiten</Text>
-          </Pressable>
-        </View>
-
-        <Text style={styles.title}>Ander doel kiezen</Text>
-        <Text style={styles.body}>
-          Je huidige streeffysiek is gemarkeerd. Kies een nieuw doel om over te stappen naar een ander schema.
-        </Text>
-
         <PhysiquePicker selected={selected} onSelect={handleSelect} />
 
         {hasChanged && selected && (
@@ -93,25 +86,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.xxl,
-    paddingTop: 32,
     gap: spacing.sm,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: spacing.sm,
-  },
-  closeButton: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  title: {
-    ...typography.title,
-  },
-  body: {
-    ...typography.bodySecondary,
-    marginBottom: spacing.lg,
   },
   confirmCard: {
     marginTop: spacing.md,

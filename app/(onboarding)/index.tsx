@@ -189,6 +189,7 @@ export default function IntakeScreen() {
             {GENDER_OPTIONS.map((option) => (
               <Pressable
                 key={option.value}
+                hitSlop={6}
                 style={[styles.chip, gender === option.value && styles.chipSelected]}
                 onPress={() => setGender(gender === option.value ? null : option.value)}
               >
@@ -396,7 +397,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   chip: {
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     borderRadius: radii.pill,
     borderWidth: 1,

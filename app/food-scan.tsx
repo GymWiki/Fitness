@@ -7,6 +7,7 @@ import { FoodLogForm, type FoodLogFormDraft } from '@/components/FoodLogForm';
 import { fetchProductWithCache } from '@/lib/foodProducts';
 import { useSyncStatus } from '@/lib/useSyncStatus';
 import { colors } from '@/theme/colors';
+import { layout } from '@/theme/layout';
 import { radii } from '@/theme/radii';
 import { spacing } from '@/theme/spacing';
 import { typography } from '@/theme/typography';
@@ -91,7 +92,7 @@ export default function FoodScanScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()}>
+        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.closeButtonWrap}>
           <Text style={styles.closeButton}>Sluiten</Text>
         </Pressable>
       </View>
@@ -146,6 +147,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     padding: spacing.xxl,
     paddingBottom: spacing.md,
+  },
+  closeButtonWrap: {
+    minHeight: layout.minTapTarget,
+    justifyContent: 'center',
   },
   closeButton: {
     color: colors.textSecondary,

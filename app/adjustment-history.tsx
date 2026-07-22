@@ -1,11 +1,15 @@
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { adjustmentTitle } from '@/lib/adjustmentLabels';
 import { fetchAdjustmentHistory, type AdjustmentHistoryEntry } from '@/lib/adjustmentHistory';
 import { useAuth } from '@/lib/auth';
 import { formatShortDate } from '@/lib/dates';
+import { Card } from '@/components/Card';
+import { EmptyState } from '@/components/EmptyState';
+import { ModalHeader } from '@/components/ModalHeader';
 import { colors } from '@/theme/colors';
+import { spacing } from '@/theme/spacing';
+import { typography } from '@/theme/typography';
+import { useEffect, useState } from 'react';
 
 function groupByWeek(entries: AdjustmentHistoryEntry[]): Array<[number, AdjustmentHistoryEntry[]]> {
   const groups = new Map<number, AdjustmentHistoryEntry[]>();
@@ -18,7 +22,6 @@ function groupByWeek(entries: AdjustmentHistoryEntry[]): Array<[number, Adjustme
 }
 
 export default function AdjustmentHistoryScreen() {
-  const router = useRouter();
   const { session } = useAuth();
 
   const [entries, setEntries] = useState<AdjustmentHistoryEntry[]>([]);
@@ -35,16 +38,8 @@ export default function AdjustmentHistoryScreen() {
 
   return (
     <View style={styles.container}>
+      <ModalHeader title="Aanpassingsgeschiedenis" subtitle="Alles wat je schema automatisch heeft laten meegroeien, en waarom." />
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()}>
-            <Text style={styles.closeButton}>Sluiten</Text>
-          </Pressable>
-        </View>
-
-        <Text style={styles.title}>Aanpassingsgeschiedenis</Text>
-        <Text style={styles.subtitle}>Alles wat je schema automatisch heeft laten meegroeien, en waarom.</Text>
-
         {isLoading && (
           <View style={styles.loadingRow}>
             <ActivityIndicator color={colors.accent} size="large" />
@@ -54,27 +49,30 @@ export default function AdjustmentHistoryScreen() {
         {!isLoading && error && <Text style={styles.error}>{error}</Text>}
 
         {!isLoading && !error && entries.length === 0 && (
-          <Text style={styles.body}>Nog geen aanpassingen gemaakt. Zodra je een trainingsweek afrondt, verschijnt hier wat er is veranderd en waarom.</Text>
+          <EmptyState
+            title="Nog geen aanpassingen"
+            body="Zodra je een trainingsweek afrondt, verschijnt hier wat er is veranderd en waarom."
+          />
         )}
 
         {!isLoading &&
           !error &&
           groupByWeek(entries).map(([weekNumber, weekEntries]) => (
             <View key={weekNumber} style={styles.weekGroup}>
-              <Text style={styles.weekLabel}>Week {weekNumber}</Text>
+              <Text style={typography.label}>Week {weekNumber}</Text>
               {weekEntries.map((entry) => (
-                <View key={entry.id} style={styles.card}>
+                <Card key={entry.id} style={styles.card}>
                   <View style={styles.cardHeaderRow}>
-                    <Text style={styles.cardTitle}>{adjustmentTitle(entry.type, entry.exerciseName)}</Text>
-                    <Text style={styles.cardDate}>{formatShortDate(entry.createdAt)}</Text>
+                    <Text style={[typography.bodyStrong, styles.cardTitle]}>{adjustmentTitle(entry.type, entry.exerciseName)}</Text>
+                    <Text style={[typography.caption, styles.cardDate]}>{formatShortDate(entry.createdAt)}</Text>
                   </View>
                   {entry.previousValue !== null && entry.newValue !== null && (
                     <Text style={styles.cardValues}>
                       {entry.previousValue} → {entry.newValue}
                     </Text>
                   )}
-                  <Text style={styles.cardExplanation}>{entry.explanation}</Text>
-                </View>
+                  <Text style={[typography.bodySecondary, styles.cardExplanation]}>{entry.explanation}</Text>
+                </Card>
               ))}
             </View>
           ))}
@@ -89,62 +87,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: 24,
-    paddingTop: 32,
-    gap: 8,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: 8,
-  },
-  closeButton: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 26,
-    fontWeight: '700',
-  },
-  subtitle: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 16,
+    padding: spacing.xxl,
+    gap: spacing.sm,
   },
   loadingRow: {
-    marginTop: 24,
+    marginTop: spacing.xxl,
     alignItems: 'center',
   },
   error: {
     color: colors.danger,
     fontSize: 15,
   },
-  body: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 21,
-  },
   weekGroup: {
-    marginBottom: 20,
-  },
-  weekLabel: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
+    marginBottom: spacing.xl,
+    gap: spacing.sm,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 10,
+    gap: spacing.xs,
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -152,26 +111,18 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   cardTitle: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
     flexShrink: 1,
   },
   cardDate: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    marginLeft: 12,
+    marginLeft: spacing.md,
   },
   cardValues: {
     color: colors.accent,
     fontSize: 15,
     fontWeight: '700',
-    marginTop: 6,
   },
   cardExplanation: {
-    color: colors.textSecondary,
     fontSize: 14,
     lineHeight: 20,
-    marginTop: 6,
   },
 });

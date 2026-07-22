@@ -1,11 +1,16 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Card } from '@/components/Card';
+import { EmptyState } from '@/components/EmptyState';
 import { LineChart } from '@/components/LineChart';
+import { ModalHeader } from '@/components/ModalHeader';
 import { useAuth } from '@/lib/auth';
 import { formatShortDate } from '@/lib/dates';
 import { fetchCardioHistory, fetchExerciseHistory, type CardioHistoryEntry, type HistorySession } from '@/lib/history';
 import { colors } from '@/theme/colors';
+import { spacing } from '@/theme/spacing';
+import { typography } from '@/theme/typography';
 
 const CARDIO_TYPE_LABELS: Record<CardioHistoryEntry['type'], string> = {
   zone2: 'Zone 2',
@@ -30,14 +35,14 @@ function StrengthHistory({ history, chartWidth }: { history: HistorySession[]; c
 
       <View style={styles.sessionList}>
         {sessionsNewestFirst.map((session) => (
-          <View key={session.workoutId} style={styles.sessionCard}>
-            <Text style={styles.sessionDate}>{formatShortDate(session.performedAt)}</Text>
+          <Card key={session.workoutId} style={styles.sessionCard}>
+            <Text style={[typography.bodyStrong, styles.sessionDate]}>{formatShortDate(session.performedAt)}</Text>
             {session.sets.map((set) => (
-              <Text key={set.setOrder} style={styles.sessionSetLine}>
+              <Text key={set.setOrder} style={[typography.bodySecondary, styles.sessionSetLine]}>
                 Set {set.setOrder}: {set.weightKg} kg × {set.reps} reps (RIR {set.rir})
               </Text>
             ))}
-          </View>
+          </Card>
         ))}
       </View>
     </>
@@ -61,24 +66,24 @@ function CardioHistory({ history, chartWidth }: { history: CardioHistoryEntry[];
 
       {heartRatePoints.length > 1 && (
         <>
-          <Text style={styles.chartSectionLabel}>Gemiddelde hartslag per sessie</Text>
+          <Text style={typography.label}>Gemiddelde hartslag per sessie</Text>
           <LineChart points={heartRatePoints} width={chartWidth} unit=" bpm" />
         </>
       )}
 
       <View style={styles.sessionList}>
         {entriesNewestFirst.map((entry) => (
-          <View key={entry.id} style={styles.sessionCard}>
-            <Text style={styles.sessionDate}>
+          <Card key={entry.id} style={styles.sessionCard}>
+            <Text style={[typography.bodyStrong, styles.sessionDate]}>
               {formatShortDate(entry.date)} · {CARDIO_TYPE_LABELS[entry.type]}
             </Text>
-            <Text style={styles.sessionSetLine}>
+            <Text style={[typography.bodySecondary, styles.sessionSetLine]}>
               {entry.durationMinutes} min · RPE {entry.rpe}
               {entry.rounds !== undefined ? ` · ${entry.rounds} rondes` : ''}
               {entry.avgHeartRate !== undefined ? ` · ${entry.avgHeartRate} bpm` : ''}
               {entry.distanceKm !== undefined ? ` · ${entry.distanceKm} km` : ''}
             </Text>
-          </View>
+          </Card>
         ))}
       </View>
     </>
@@ -91,7 +96,6 @@ export default function ExerciseHistoryScreen() {
   const dayExerciseId = typeof params.dayExerciseId === 'string' ? params.dayExerciseId : undefined;
   const exerciseName = typeof params.exerciseName === 'string' ? params.exerciseName : undefined;
   const isCardio = params.kind === 'cardio_duration' || params.kind === 'cardio_interval';
-  const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
 
   const [strengthHistory, setStrengthHistory] = useState<HistorySession[]>([]);
@@ -128,16 +132,8 @@ export default function ExerciseHistoryScreen() {
 
   return (
     <View style={styles.container}>
+      <ModalHeader title={exerciseName ?? 'Oefening'} subtitle="Historie" />
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()}>
-            <Text style={styles.closeButton}>Sluiten</Text>
-          </Pressable>
-        </View>
-
-        <Text style={styles.title}>{exerciseName ?? 'Oefening'}</Text>
-        <Text style={styles.subtitle}>Historie</Text>
-
         {isLoading && (
           <View style={styles.loadingRow}>
             <ActivityIndicator color={colors.accent} size="large" />
@@ -146,7 +142,9 @@ export default function ExerciseHistoryScreen() {
 
         {!isLoading && error && <Text style={styles.error}>{error}</Text>}
 
-        {!isLoading && !error && !hasHistory && <Text style={styles.body}>Nog geen sessies gelogd voor deze oefening.</Text>}
+        {!isLoading && !error && !hasHistory && (
+          <EmptyState title="Nog geen sessies" body="Log een set of sessie voor deze oefening om hier je voortgang te zien." />
+        )}
 
         {!isLoading &&
           !error &&
@@ -167,67 +165,27 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: 24,
-    paddingTop: 32,
-    gap: 8,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: 8,
-  },
-  closeButton: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 26,
-    fontWeight: '700',
-  },
-  subtitle: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    marginBottom: 16,
+    padding: spacing.xxl,
+    gap: spacing.sm,
   },
   loadingRow: {
-    marginTop: 24,
+    marginTop: spacing.xxl,
     alignItems: 'center',
   },
   error: {
     color: colors.danger,
     fontSize: 15,
   },
-  body: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  chartSectionLabel: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
   sessionList: {
-    gap: 12,
+    gap: spacing.md,
   },
   sessionCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
+    gap: spacing.xs,
   },
   sessionDate: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 6,
+    marginBottom: 0,
   },
   sessionSetLine: {
-    color: colors.textSecondary,
     fontSize: 14,
     lineHeight: 20,
   },
