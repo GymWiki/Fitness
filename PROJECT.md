@@ -991,6 +991,85 @@ volledige 10-ringen-grid tonen beide de juiste sortering, en tikken op een
 ring (getest op "Rug", status `recovering`) toont de juiste tik-kaart met
 statuslabel en actuele uitleg. Geen consolefouten.
 
+**Dynamische supercompensatie-curve boven de legenda.**
+
+*Wat.* Direct boven de kleurenlegenda op het readiness-scherm toont een
+lijngrafiek het klassieke supercompensatie-verloop (dip → herstel → piek →
+geleidelijke terugval) voor de geselecteerde spiergroep: een dip vlak na de
+training, een stijging terug door de basislijn zodra het venster opent, een
+piek binnen het venster (gearceerd), en daarna een geleidelijke terugval als
+er niet opnieuw getraind wordt. Standaard toont de grafiek de bovenste
+spiergroep uit dezelfde `compareMuscleRecoveryPriority`-sortering die het
+grid al gebruikt; tikken op een ring in het grid werkt zowel de bestaande
+tik-kaart als deze grafiek bij (gedeelde `curveMuscleGroupOverride`-state),
+met een subtiele fade-overgang. Onder de grafiek staat dezelfde
+statuslabel/uitleg als het tik-kaartje, plus een vaste notitie dat dit een
+vereenvoudigd model is, met een link naar de FAQ.
+
+*Recharts bleek geen goede match — bewust afgeweken van de opdracht.* De
+opdracht noemde recharts als "al beschikbaar", maar dat klopt niet voor deze
+codebase: recharts is geen dependency (`npm ls recharts` geeft niets terug),
+en het is bovendien een React-DOM-bibliotheek die niet op React Native's
+renderer draait — bruikbaar op de web-export, niet op een native
+iOS/Android-build, en deze app is nadrukkelijk geen web-only Expo-project.
+In plaats daarvan hergebruikt de grafiek exact hetzelfde patroon als het al
+bestaande `LineChart.tsx` (afhankelijkheidsvrije `react-native-svg`,
+zelfgebouwde schaalfuncties): nieuwe `RecoveryCurveChart.tsx`.
+
+*`generateRecoveryCurve` neemt een `RecoveryEstimate`, geen ruwe sessie —
+bewust afgeweken van de letterlijke functiehandtekening uit de opdracht.*
+De opdracht suggereerde `generateRecoveryCurve(muscleGroup, lastSession)`.
+Maar `windowStartHours`/`windowEndHours` zijn al de volledig
+gewichtaangepaste uitkomst van `estimateRecoveryState`'s eigen
+`heavinessMultiplier`-berekening (sessiezwaarte, RIR, sets, compound-lift,
+soreness/slaap zitten er al in verwerkt) — een curve die in plaats daarvan
+de ruwe sessie opnieuw zou verwerken, zou die berekening dupliceren en kon
+op termijn uit de pas gaan lopen met `estimateRecoveryState` zelf. Door
+`generateRecoveryCurve(muscleGroup, estimate: RecoveryEstimate)` te bouwen
+(nieuw `packages/progression-engine/src/recoveryCurve.ts`) is de curve
+letterlijk afgeleid van dezelfde estimate die de ring en de tik-kaart al
+tonen: het "nu"-punt kopieert `estimate.status`/`hoursSinceSession` één op
+één, in plaats van een tweede, mogelijk afwijkende classificatie te maken.
+Dit voorkomt ook dat ruwe sessiedata (RIR, sets, compound-lift) helemaal tot
+in de UI-laag zou moeten worden doorgegeven — `fetchAllMuscleGroupRecoveryEstimates`
+geeft toch al alleen `RecoveryEstimate`s terug, geen ruwe sessies.
+
+*Monotone curve-vorm, cosmetische kleurclassificatie.* De curve zelf (dip →
+basislijn → piek → afvlakking) is met de hand ontworpen als vaste,
+illustratieve vorm (cosinus-easing tussen een handvol ankerpunten,
+tijdschaal afgeleid van `windowStartHours`/`windowEndHours`) — geen
+statistisch model, consistent met hoe de opdracht dit zelf beschrijft
+("geïllustreerd, vereenvoudigd model"). Elk gesampled punt krijgt ook een
+eigen fase-classificatie (`illustrativeStatus()`) voor de segment-kleuring
+langs de lijn (rood→oranje→groen via de bestaande, ongewijzigde
+`recoveryColor()`) — deze classificatie dupliceert bewust
+`estimateRecoveryState`'s drempels (inclusief de afronding van
+`windowClosingStartHours`) maar wordt **nooit** gebruikt voor het "nu"-punt
+zelf, juist om te voorkomen dat een afrondingsverschil op een
+grenswaarde de curve tegen de ring/tekst zou laten ingaan bij het enige
+punt dat er echt toe doet.
+
+*Tests.* 7 nieuwe tests in `recoveryCurve.test.ts`: duidelijke dip met "nu"
+dicht bij het dieptepunt vlak na een sessie, "nu" bij de piek binnen het
+ready-venster, "nu".status komt voor alle vijf mogelijke statussen exact
+overeen met de brontoestand (nooit een tegenspraak), "nu" staat precies op
+`estimate.hoursSinceSession` (nooit herberekend), "nu" blijft altijd binnen
+het gesample bereik (ook ver na `window_passed`), en determinisme (zelfde
+estimate erin = zelfde curve eruit).
+
+*Verificatie.* Via dezelfde tijdelijke-previewroute-aanpak (ditmaal een
+volledige kopie van het readinessscherm met gefabriceerde data voor alle
+vijf statussen, achteraf teruggedraaid): curve-vorm en kleur kloppen per
+status, "nu"-label en basislijn-label overlappen nooit (twee rondes
+gescreenshot — de eerste ronde toonde tekstoverlap/-afknipping bij `no_data`
+en bij een net-getrainde spiergroep dicht bij de linkerrand, opgelost door
+het "nu"-label en het basislijn-label altijd tegenover elkaar te verankeren
+in plaats van beide links), en tikken op een ring in het volledige grid
+werkt zowel de tik-kaart als de curve consistent bij (getest op "Triceps",
+status `window_passed` — curve toont de afgevlakte staart dicht bij de
+basislijn, precies zoals de status "voorbij" beschrijft). Geen
+consolefouten.
+
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
   platform-onafhankelijk TypeScript-package (geen React Native-, Expo- of
   Supabase-imports). De Expo-app hangt eraan via `@fitness/progression-engine`.
@@ -1715,6 +1794,7 @@ src/
     FoodLogForm.tsx                Gedeeld door scan/zoeken/handmatig: hoeveelheid + macro-preview + loggen + favoriet
     RecoveryRing.tsx                Herbruikbare Apple Watch-stijl voortgangsring (SVG, stroke-dasharray/dashoffset) — puur presentational, percent + kleur als props
     MuscleRecoveryRing.tsx          Eén grid-tegel: ring + spiergroepnaam + statuslabel; optionele onPress (leeg = geneste-Pressable-val vermeden in de compacte kaart)
+    RecoveryCurveChart.tsx          Illustratieve supercompensatie-curve (react-native-svg) voor de geselecteerde spiergroep — dip/piek/afvlakking + "nu"-marker, gedeelde kleurlogica met de ringen
     WeekOverview.tsx               Dashboard: streak-regel + 7-daagse weekoverzicht-strip, eigen fetch (fetchActiveProgram + fetchWorkoutDates)
     DashboardCardShell.tsx        Gedeelde kop/laadstatus/CTA-schil voor de vier dashboardkaarten — presentational only
     TrainingTodayCard.tsx          Dashboardkaart 1: eigen fetch (fetchActiveProgram), naam/omschrijving/aantal oefeningen + "Start workout"
@@ -1779,10 +1859,12 @@ packages/
       strength.ts               Double progression met RIR
       cardio.ts                 Polarized 80/20: computeWeeklyDistribution / adviseNextCardioType / adviseCardioProgression
       recovery.ts                estimateRecoveryState() — supercompensatie-venster per spiergroep
+      recoveryCurve.ts            generateRecoveryCurve() — illustratieve dip/piek/afvlakking-curve, afgeleid van diezelfde RecoveryEstimate
     tests/
       strength.test.ts
       cardio.test.ts
       recovery.test.ts
+      recoveryCurve.test.ts
   program-generator/          Pure, framework-onafhankelijke programma-generator
     src/
       types.ts
@@ -1862,7 +1944,7 @@ Actions-tab (in plaats van stil niets te doen), dus het ergste geval is
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages + root src/lib samen (223 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (230 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```
