@@ -76,6 +76,13 @@ describe('estimateRecoveryState', () => {
     expect(heavy.status).not.toBe(light.status);
   });
 
+  it('never lets the estimated window exceed the documented ~120h ceiling, even when every heaviness multiplier stacks', () => {
+    const maximallyHeavy = session({ performedAt: hoursAgo(50), averageRIR: 0, setsCompleted: 15, hasCompoundLift: true });
+    const estimate = estimateRecoveryState('Benen', maximallyHeavy, { soreness: 5, sleepQuality: 1 }, REFERENCE);
+    expect(estimate.windowEndHours).toBeLessThanOrEqual(120);
+    expect(estimate.windowStartHours).toBeLessThanOrEqual(120);
+  });
+
   it('high reported soreness and poor sleep extend the window further', () => {
     const base = estimateRecoveryState('Rug', session({ performedAt: hoursAgo(50) }), {}, REFERENCE);
     const tired = estimateRecoveryState('Rug', session({ performedAt: hoursAgo(50) }), { soreness: 5, sleepQuality: 1 }, REFERENCE);

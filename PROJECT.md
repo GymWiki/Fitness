@@ -1699,6 +1699,88 @@ progressie-engine + 112 root `src/lib`), en een productie-`expo export
 imports/afhankelijkheden correct resolven, iets wat `tsc` alleen niet altijd
 vangt).
 
+**Timing-consistentie-audit: app-logica vs. eigen FAQ.** Controleert of
+alles wat de app rond timing daadwerkelijk doet, overeenkomt met wat de
+"Wetenschap"-FAQ er zelf over beweert — negen specifieke claims langsgelopen,
+bevindingen eerst gerapporteerd, dan pas gefixt. Geen wijziging aan de
+kernprincipes zelf (double progression, polarized cardio,
+supercompensatie-model), uitsluitend het gelijktrekken van parameters/gedrag
+met de eigen onderbouwing.
+
+*Bevindingen, kort per punt:*
+1. **Supercompensatie-venster** — `estimateRecoveryState` en
+   `generateRecoveryCurve` gebruikten al gegarandeeld dezelfde bandbreedte
+   (de curve wordt letterlijk van de estimate afgeleid, nooit een tweede
+   berekening). Wél een mismatch: bij volledige stapeling van
+   zwaarte-multipliers (lage RIR + hoog volume + compound + hoge spierpijn +
+   slechte slaap) op een grote spiergroep kon het venster oplopen tot ~184
+   uur — ver voorbij de eigen gedocumenteerde bovengrens van "tot ~120 uur
+   voor zware sessies". **Fix**: `windowStartHours`/`windowEndHours` capt nu
+   hard op 120 uur, zodat de code nooit meer beweert wat hij zelf
+   tegenspreekt.
+2. **Rust tussen sets** — de FAQ beweerde expliciet dat de app "wel een
+   richtlijn geeft passend bij je doel", maar er bestond nergens in de
+   workout-flow enige rust-richtlijn. **Fix**: nieuwe
+   `src/lib/restGuidance.ts` (doelafhankelijk: ~2-3 min voor `strength`,
+   60-90 sec voor de overige doelen — spiergroei is minder gevoelig voor de
+   exacte duur), getoond als niet-afdwingende tekst onder de
+   "loggen"-knop in het workout-scherm.
+3. **Opwarmen** — de FAQ was al eerlijk ("de app berekent dit nog niet
+   automatisch"), maar er was geen enkele aanmoediging in de flow. **Fix**:
+   een lichte, niet-verplichte tip ("bouw op met 1-2 lichtere sets") vóór de
+   eerste set van elke oefening; FAQ-tekst bijgewerkt nu dat klopt.
+4. **Deload-interval** — de code was al correct:
+   `DEFAULT_CYCLE_LENGTH_WEEKS = 5` in `deload.ts`, expliciet gedocumenteerd
+   als "midpoint of the requested 4-6 week range". De FAQ-tekst zelf was
+   vager ("elke paar weken"). **Fix**: FAQ-tekst gepreciseerd naar "elke 4
+   tot 6 weken" / "gemiddeld 5 weken", zodat hij de al goed doordachte
+   logica ook echt beschrijft.
+5. **Cardio 80/20** — venster (10 dagen, binnen de gevraagde 7-14) en
+   verhouding (doelafhankelijk 70-85%, met 80% als fysiologische standaard
+   voor hypertrophy/endurance/mixed) kloppen, en de adviestekst toont altijd
+   het daadwerkelijk gebruikte venster en streefpercentage, nooit een vast
+   "80%" ongeacht doel. Geen mismatch, geen wijziging.
+6. **Interference-effect** — `distributeSessions` weerde al zowel de zware
+   beendag zelf als de dag ervoor voor intensieve cardio (strenger dan "6+
+   uur ertussen"), en dat zat al in de kalenderplanning van de vorige sessie
+   verwerkt en getest. Maar er bestond geen enkele FAQ-entry die dit aan de
+   gebruiker uitlegt, terwijl elke andere motorbeslissing er wél een heeft.
+   **Fix**: nieuwe entry `interference-effect` toegevoegd (Training &
+   progressie), gebrond op Wilson et al. (2012)'s meta-analyse over
+   interferentie tussen cardio en krachttraining — bron geverifieerd via
+   web-search vóór toevoeging, zelfde controlediscipline als de rest van
+   deze FAQ.
+7. **Anaboolvenster / voedingstiming** — geen enkele tijdsdruk gevonden
+   (geen notificaties, geen "log binnen X minuten"); voedingsdoelen zijn
+   overal puur dagtotaal-gebaseerd. Geen mismatch, geen wijziging.
+8. **Slaap als hersteldsignaal** — `RecoverySignals.sleepQuality` bestaat al
+   in de pure engine en beïnvloedt de berekening wél als hij wordt
+   meegegeven, maar wordt nergens in de app daadwerkelijk ingevuld:
+   `fetchRecoveryEstimate` roept de engine altijd aan met een leeg
+   signals-object. De FAQ beweerde dat de app dit al meeweegt — dat klopte
+   dus niet. Een echte UI hiervoor (dagelijkse invoer, opslag) is een nieuwe
+   feature en valt buiten de afbakening van deze audit. **Fix**: FAQ-tekst
+   herschreven zodat hij eerlijk is over de huidige staat (kan meewegen als
+   signaal, wordt nog niet uitgevraagd) — zelfde eerlijke toon als de
+   `opwarmen`-entry al hanteerde vóór fix 3.
+9. **Resultatentijdlijn** — geen ontmoedigende "geen verandering"-copy
+   gevonden nergens in de app; lege staten zijn overal uitnodigend; een
+   kracht-trend wordt al zichtbaar zodra er 2 sessies gelogd zijn, wat past
+   bij de FAQ's "meetbaar na 2-4 weken". Geen mismatch, geen wijziging.
+
+*Tests.* Nieuwe/uitgebreide tests leggen elke fix vast: een
+`recovery.test.ts`-test die bevestigt dat het venster nooit boven 120 uur
+uitkomt ook al stapelen alle multipliers; het nieuwe
+`restGuidance.test.ts` (doelafhankelijke richtlijn-tekst, elk doel gedekt);
+`faqContent.test.ts`'s bestaande structuurtests (unieke id's, geldige
+categorie, elke bron met titel/auteur/jaar/https-url) lopen automatisch mee
+over de nieuwe interference-effect-entry.
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 269 tests slagen (36
+adaptatieplanner + 25 voedingsengine + 38 programmagenerator + 55
+progressie-engine + 115 root `src/lib`), productie-`expo export --platform
+web`-bundle bouwt zonder fouten.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen

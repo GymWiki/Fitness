@@ -38,6 +38,17 @@ const BASELINE_WINDOW_HOURS: Record<MuscleGroupSize, [number, number]> = {
   large: [56, 96],
 };
 
+/**
+ * Hard ceiling on the multiplier-adjusted window, matching this file's own
+ * documented literature bound ("musculoskeletal up to ~120h for heavy
+ * sessions"). Without this, stacking every heaviness multiplier (low RIR,
+ * high volume, compound lift, high soreness, poor sleep) on a large-muscle
+ * baseline can push windowEndHours to ~184h — the code contradicting its
+ * own stated model, which is exactly the kind of drift the "Wetenschap"-FAQ
+ * (vraag 2) warns must never happen between the app and its own claims.
+ */
+const MAX_WINDOW_HOURS = 120;
+
 export function muscleGroupSize(muscleGroup: string): MuscleGroupSize {
   return MUSCLE_GROUP_SIZE[muscleGroup] ?? DEFAULT_SIZE;
 }
@@ -116,8 +127,8 @@ export function estimateRecoveryState(
   }
 
   const multiplier = heavinessMultiplier(lastSession, signals);
-  const windowStartHours = Math.round(baseStart * multiplier);
-  const windowEndHours = Math.round(baseEnd * multiplier);
+  const windowStartHours = Math.min(Math.round(baseStart * multiplier), MAX_WINDOW_HOURS);
+  const windowEndHours = Math.min(Math.round(baseEnd * multiplier), MAX_WINDOW_HOURS);
   const windowClosingStartHours = Math.round(windowStartHours + (windowEndHours - windowStartHours) * 0.75);
 
   const hoursSinceSession = Math.max(0, (referenceDate.getTime() - new Date(lastSession.performedAt).getTime()) / (1000 * 60 * 60));
