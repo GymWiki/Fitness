@@ -1131,6 +1131,56 @@ zichtbare uitdoving richting het einde); voor `no_data` blijft de curve
 terecht een platte lijn zonder vulling (geen fase om te vullen). Geen
 consolefouten.
 
+**Bugfix: witte balk zichtbaar tijdens scrollen (web).**
+
+*Root cause.* Via DOM-inspectie (Playwright, computed styles per laag) bleek
+er een lichtgrijze `rgb(242, 242, 242)`-achtergrond te zitten op een div
+tussen `#root` en onze eigen, correct donker gestylede content — exact
+React Navigations `DefaultTheme`-achtergrondkleur. Expo Router (SDK 57)
+gebruikt intern nog steeds `@react-navigation/native`'s `NavigationContainer`
+(met die lichte `DefaultTheme` als harde default, nooit overschreven), maar
+staat sinds SDK 56 niet meer toe dat app-code zelf `@react-navigation/native`
+importeert (Metro gooit een expliciete foutmelding — geprobeerd en bevestigd:
+een `ThemeProvider`/`DarkTheme`-import brak de build direct). Onderzoek in
+`node_modules/expo-router` (o.a. `ExpoRoot.js`, `fork/NavigationContainer.js`,
+`layouts/StackClient.d.ts`) bevestigde dat er in deze versie geen publieke,
+ondersteunde manier is om die interne theme-achtergrond vanuit app-code te
+overschrijven — `Stack`'s `screenOptions`-functie kan het huidige thema wel
+*lezen*, maar niet instellen. Deze lichtgrijze laag is normaal onzichtbaar
+(onze eigen `contentStyle`/`Card`-achtergronden dekken hem af in rust), maar
+kan tijdens de rubber-band/bounce-animatie van momentum-scrollen (met name
+trackpad-scrollen op macOS/desktop) heel even doorschemeren als de content
+voorbij zijn eigen grenzen overschiet.
+
+*Fix — de bounce voorkomen in plaats van de onbereikbare laag overschilderen.*
+Omdat de onderliggende kleur niet aan te passen is, is in plaats daarvan de
+bounce-animatie zelf uitgezet: nieuwe `useDisableWebOverscrollBounce()`-hook
+in `app/_layout.tsx` injecteert web-only (via `Platform.OS`) één globale
+`<style>`-regel (`* { overscroll-behavior-y: contain; }`) bij het opstarten
+van de app. `overscroll-behavior` is een no-op op elementen die zelf geen
+scroll-container zijn, dus breed toepassen is veilig — het voorkomt zowel de
+rubber-band-overshoot (waar het zichtbare gat vandaan kwam) als het
+doorketenen van scroll naar een ouder-element.
+
+*Wat overwogen en verworpen is.* Een `app/+html.tsx` (Expo Routers
+mechanisme om de root-`<html>`/`<body>` op web aan te passen, incl.
+`ScrollViewStyleReset`) is eerst gebouwd, maar bleek voor deze `web.output`-
+instelling (geen `"static"`) helemaal niet te worden toegepast — de
+geëxporteerde `index.html` bleef de standaard Expo-template, ongeacht het
+bestand. `web.output: "static"` alsnog aanzetten om dit te forceren is
+bewust niet gedaan: dat is een grotere architectuurwijziging (van SPA naar
+per-route statische HTML) dan deze gerichte bugfix rechtvaardigt, en had het
+daadwerkelijke probleem (een laag diep binnen `#root`, niet het `<html>`/
+`<body>`-niveau) sowieso niet geraakt.
+
+*Verificatie.* De exacte rubber-band-bounce is niet visueel te reproduceren
+in deze sandbox (headless Chromium op Linux simuleert geen macOS/iOS-
+scrollfysica), dus is in plaats daarvan geverifieerd dat de fix daadwerkelijk
+actief is: via Playwright bevestigd dat de `<style>`-regel na het laden in
+`document.head` staat en dat `getComputedStyle(document.body).overscrollBehaviorY`
+`"contain"` teruggeeft (was `"auto"`), zonder consolefouten en zonder
+visuele regressie op het (uitgeteste) inlogscherm.
+
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
   platform-onafhankelijk TypeScript-package (geen React Native-, Expo- of
   Supabase-imports). De Expo-app hangt eraan via `@fitness/progression-engine`.
