@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { FAQ_ENTRIES, searchFaqEntries } from './faqContent';
+import { FAQ_CATEGORIES, FAQ_ENTRIES, searchFaqEntries } from './faqContent';
 
 describe('FAQ_ENTRIES content', () => {
   it('has at least one source for every entry', () => {
     for (const entry of FAQ_ENTRIES) {
       expect(entry.bronnen.length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('assigns every entry a category from FAQ_CATEGORIES — never a stray/misspelled value', () => {
+    for (const entry of FAQ_ENTRIES) {
+      expect(FAQ_CATEGORIES).toContain(entry.category);
+    }
+  });
+
+  it('gives every category at least one entry, so no filter tab is ever empty', () => {
+    for (const category of FAQ_CATEGORIES) {
+      expect(FAQ_ENTRIES.some((entry) => entry.category === category)).toBe(true);
     }
   });
 
