@@ -17,6 +17,8 @@ export interface Profile {
   gender: Gender | null;
   birthYear: number | null;
   targetWeightKg: number | null;
+  /** 1 (Monday) .. 7 (Sunday), length always equal to daysPerWeek when set. Null for accounts that haven't chosen fixed training days yet — the calendar schedule falls back to the day-count rotation for those. */
+  preferredWeekdays: number[] | null;
 }
 
 interface ProfileRow {
@@ -30,6 +32,7 @@ interface ProfileRow {
   gender: Gender | null;
   birth_year: number | null;
   target_weight_kg: number | null;
+  preferred_weekdays: number[] | null;
 }
 
 function fromRow(row: ProfileRow): Profile {
@@ -44,6 +47,7 @@ function fromRow(row: ProfileRow): Profile {
     gender: row.gender,
     birthYear: row.birth_year,
     targetWeightKg: row.target_weight_kg,
+    preferredWeekdays: row.preferred_weekdays,
   };
 }
 
@@ -57,6 +61,7 @@ export interface ProfileUpdate {
   gender?: Gender | null;
   birthYear?: number | null;
   targetWeightKg?: number | null;
+  preferredWeekdays?: number[] | null;
 }
 
 /** Partial update to an existing profiles row — used by the Profiel tab's edit form. */
@@ -71,6 +76,7 @@ export async function updateProfile(userId: string, update: ProfileUpdate): Prom
   if (update.gender !== undefined) patch.gender = update.gender;
   if (update.birthYear !== undefined) patch.birth_year = update.birthYear;
   if (update.targetWeightKg !== undefined) patch.target_weight_kg = update.targetWeightKg;
+  if (update.preferredWeekdays !== undefined) patch.preferred_weekdays = update.preferredWeekdays;
 
   const { error } = await supabase.from('profiles').update(patch).eq('id', userId);
   if (error) throw error;

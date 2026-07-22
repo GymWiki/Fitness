@@ -1564,6 +1564,141 @@ functionaliteit, zoals vereist door de scope-afbakening van deze pass.
   (de sync-wachtrij zelf) was al in een eerdere sessie gebouwd en
   gedocumenteerd; deze sessie voegt de leeskant toe die er nog aan ontbrak.
 
+**Kalenderplanning (2 weken vooruit) + user-flow audit.** Twee samenhangende
+problemen: trainingsdagen stonden alleen in volgorde ("dag 1, dag 2, ...")
+zonder koppeling aan echte kalenderdata, en de app voelde op een paar plekken
+los aan in plaats van als één samenhangende flow. Deel A pakt het
+planningsprobleem op; Deel B bouwt voort op die inzichten voor een gerichte
+navigatie-/duidelijkheidscorrectie. Geen wijziging aan de kern-engines
+(kracht, cardio, adaptatieplanner, voedingsberekening) — dit is een
+planningslaag bovenop het bestaande schema, plus koppelingen tussen
+bestaande schermen.
+
+*Deel A — datamodel.* Nieuwe migratie `0005_scheduled_sessions.sql`:
+`profiles.preferred_weekdays` (smallint[], 1=maandag..7=zondag, lengte moet
+gelijk zijn aan `days_per_week`) en een `scheduled_sessions`-tabel
+(kalenderdatum, programma, `program_day_id` — null voor een rustdag — en
+status `planned`/`done`/`missed`/`rest`), met een `unique (user_id,
+scheduled_date)` zodat een gebruiker precies één plan per kalenderdag heeft
+ongeacht welk programma het is. Dat laatste is bewust: het is wat het
+opnieuw genereren van de planning na een schemawissel of weekaanpassing
+botsingsvrij maakt.
+
+*Deel A — de planner zelf, hergebruikt in plaats van opnieuw gebouwd.*
+`distributeSessions` (adaptatieplanner) bestond al: een pure, geteste
+functie die kracht- en cardiodagen interference-vrij over de week verdeelt,
+maar wees altijd een vast, gelijkmatig gespreid patroon toe — nooit gekoppeld
+aan een echt weekdagveld (zie de eerdere sessie-aantekening hierboven bij
+"wekelijkse adaptatieplanner"). Kreeg een optionele vierde parameter,
+`preferredWeekdays`: als die is meegegeven en het aantal exact overeenkomt
+met het aantal krachtdagen, gebruikt de functie die vaste dagen in plaats
+van het ingebouwde patroon — bij een mismatch (verkeerd aantal, dubbele
+dagen) valt hij terug op het oude gedrag in plaats van een kapotte planning
+te produceren. Nieuwe `buildScheduleDates` (zelfde package) legt één
+weekplan over een willekeurige datumrange: omdat voorkeursdagen vast zijn,
+is één week genoeg om elke toekomstige week te vullen — geen week-voor-week
+herberekening nodig.
+
+*Deel A — "zware beendag" nu afgeleid, niet meer hypothetisch.*
+`isHeavyLowerBodyDay` (nieuw in `@fitness/program-generator`) leidt af of
+een dag een zware compound-beenoefening bevat (squat/hinge-patroon, dus
+"Benen"/"Bilspieren-Hamstrings") rechtstreeks uit de daadwerkelijk
+opgeslagen oefeningen van een dag — niet uit een aparte, potentieel
+verouderende vlag, en blijft dus correct na een handmatige oefeningswissel
+in het Schema-tabblad.
+
+*Deel A — rollend venster, één functie die alles regelt.* Nieuwe
+`src/lib/schedule.ts`: `ensureScheduledWindow(userId)` is idempotent en
+veilig om op elke dashboard/schema-focus aan te roepen. Ze veegt eerst
+verlopen `planned`-rijen naar `missed` (een gemiste dag *vervalt* simpelweg —
+zie hieronder voor de afweging), leest dan `preferred_weekdays` (no-op als
+die niet is ingesteld — bestaande accounts vallen overal automatisch terug
+op de oude dag-telling-rotatie, nergens hard vereist), en vult alleen het
+gat tussen "waar het venster nu eindigt" en "vandaag + 2 weken" — nooit
+al-geplande dagen opnieuw. `fetchScheduledSessions` is de ene bron die
+dashboard, weekstrip en het schema-overzicht allemaal uitlezen, zodat ze
+per definitie nooit uit de pas kunnen lopen.
+
+*Eén duidelijke, uitgelegde regel voor een gemiste dag: vervalt, schuift
+nooit door.* De opdracht liet de keuze open ("laat de gebruiker kiezen, of
+automatiseer met een duidelijke regel"). Gekozen voor automatisch vervallen
+in plaats van doorschuiven naar de eerstvolgende vrije dag: doorschuiven zou
+de vaste voorkeursdagen na verloop van tijd juist ondermijnen (het hele punt
+van "ma/wo/vr" is dat het ma/wo/vr blijft), en zou bovendien voortdurend
+kunnen botsen met de wekelijkse evaluatie van de adaptatieplanner, die op
+`daysPerWeek`-cycli rekent, niet op individuele verschoven data. De
+therapietrouw-logica van de planner (structureel missen → `reduce_days`)
+blijft ongewijzigd en vangt het patroon op als het vaker gebeurt; één
+gemiste dag verandert er zelf niets aan.
+
+*Niet met terugwerkende kracht.* Zowel `applyWeekReview` (na een
+weekevaluatie) als `switchGoal` (bij een schemawissel) verwijderen nu de
+strikt toekomstige `planned`/`rest`-rijen (weekreview: na vandaag;
+schemawissel: inclusief vandaag, want dat vervangt het hele schema meteen in
+plaats van vooruit) voordat `ensureScheduledWindow` ze — bij de eerstvolgende
+aanroep — opnieuw genereert tegen het bijgewerkte programma. Rijen die al
+gepasseerd zijn (`done`/`missed`) blijven altijd staan; dat is geschiedenis,
+geen planning.
+
+*UI-koppeling.* `TrainingTodayCard` toont voortaan de daadwerkelijk
+geplande sessie voor vandaag (of een expliciete "Rustdag"-tekst) in plaats
+van "de volgende dag in de rij"; valt terug op de oude rotatie zodra er geen
+kalenderplanning is. `WeekOverview`'s streep leest dezelfde
+`scheduled_sessions` als de kaart (nieuwe `scheduleToWeekStrip` in
+`weekStrip.ts`), met dezelfde val-terug-heuristiek. De Schema-pagina kreeg
+een compact 2-wekenoverzicht (datum, weekdag, dagnaam of "Rustdag", status),
+of — als er nog geen voorkeursdagen zijn ingesteld — een korte uitnodiging
+naar Profiel. Voorkeursdagen zijn instelbaar bij onboarding (nieuwe
+`WeekdayPicker`-component, gedeeld tussen onboarding en Profiel zodat ze
+nooit uit de pas kunnen lopen) en aanpasbaar in Profiel; bij het wijzigen
+van dagen-per-week wordt de weekdagkeuze bewust gewist in plaats van
+half-geldig te blijven staan.
+
+*Tests.* Alle vier de expliciet gevraagde scenario's zijn afgedekt: (1)
+voorkeursdagen ma/wo/vr produceren een 2-wekenplanning met sessies exact op
+die dagen (`distribute.test.ts` + `schedule.test.ts` in het
+adaptatieplanner-package, plus `src/lib/schedule.test.ts` tegen een gemockte
+Supabase-laag); (2) een weekreview-aanpassing wist alleen strikt-toekomstige
+rijen, nooit vandaag of eerder (`weekReview.test.ts`, met een aparte test
+die bevestigt dat het weekteller-ophogen vóór de planningsopschoning
+gebeurt); (3) een gemiste dag krijgt de gekozen, voorspelbare behandeling
+(de sweep-test in `schedule.test.ts` controleert de exacte
+`status=planned`/`scheduled_date < vandaag`-filters); (4) dashboard en
+weekstrip lezen aantoonbaar dezelfde bron (`scheduleToWeekStrip` mapt de
+`scheduled_sessions`-status woordelijk over, getest per status).
+
+*Deel B — audit (bevindingen, kort).* Alle zeven kernflows doorlopen als
+nieuwe gebruiker. De meeste waren al consistent dankzij de eerdere
+UI/UX-pass (Loggen/Gelogd-terminologie, foutmeldingen, lege staten). Drie
+concrete problemen gevonden en opgelost:
+1. De readiness-tik-kaart legde uit dat een spiergroep "klaar" was, maar had
+   geen link naar de bijbehorende training — de gebruiker moest zelf naar
+   Schema zoeken. Opgelost met een "Start training →"-link op de tik-kaart
+   (readiness.tsx) wanneer de status `ready`/`window_closing` is, die naar
+   de eerste actieve programmadag springt die deze spiergroep traint.
+2. Op een rustdag toonde de trainingskaart de CTA "Naar schema", maar de
+   tik-handler deed niets zodra er geen specifieke dag was — een
+   daadwerkelijke dead end (al vóór deze sessie aanwezig, nu duidelijker
+   zichtbaar omdat Deel A rustdagen expliciet herkent). Opgelost:
+   `TrainingTodayCard`'s tik navigeert nu altijd ergens heen — naar de
+   training als die er is, anders naar het Schema-tabblad.
+3. Na "Workout voltooien" sloot het scherm gewoon; de "Vandaag"-kaart bleef
+   daarna dezelfde "Start workout"-CTA tonen voor exact dezelfde dag, zonder
+   te bevestigen dat de sessie al gelogd was. Opgelost: als de
+   kalenderplanning voor vandaag al `done` is, toont de kaart een expliciete
+   "Getraind vandaag ✓"-badge en verandert de CTA in "Bekijk workout".
+
+Bewust niet aangeraakt: navigatiestructuur op schermniveau, en elke
+onderliggende trainings-/voedingslogica — dit was uitsluitend een koppelings-
+en duidelijkheidscorrectie, geen nieuwe features.
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 265 tests slagen (36
+adaptatieplanner + 25 voedingsengine + 38 programmagenerator + 54
+progressie-engine + 112 root `src/lib`), en een productie-`expo export
+--platform web`-bundle bouwt zonder fouten (bevestigt dat alle nieuwe
+imports/afhankelijkheden correct resolven, iets wat `tsc` alleen niet altijd
+vangt).
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen

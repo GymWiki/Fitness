@@ -18,17 +18,33 @@ function dayBefore(weekday: Weekday): Weekday {
 }
 
 /**
- * Lays strength days out over the week using a fixed, evenly-spaced pattern
- * per day count, then slots cardio sessions into the remaining days —
- * keeping intensive cardio off both the heavy leg day itself and the day
- * right before it (interference: not enough recovery window otherwise).
- * Goals where cardio is a primary focus (endurance/fat_loss/mixed) apply
- * that same protection even to easy zone2 work; strength/hypertrophy goals
- * only protect the hard sessions, since easy cardio there is a low-cost
- * add-on to a lifting day rather than something that needs its own slot.
+ * Lays strength days out over the week, then slots cardio sessions into the
+ * remaining days — keeping intensive cardio off both the heavy leg day
+ * itself and the day right before it (interference: not enough recovery
+ * window otherwise). Goals where cardio is a primary focus (endurance/
+ * fat_loss/mixed) apply that same protection even to easy zone2 work;
+ * strength/hypertrophy goals only protect the hard sessions, since easy
+ * cardio there is a low-cost add-on to a lifting day rather than something
+ * that needs its own slot.
+ *
+ * `preferredWeekdays`, when given and matching `strengthDays.length` exactly
+ * (after de-duplication), overrides the built-in evenly-spaced pattern with
+ * the user's own chosen training days — this is what lets a calendar-based
+ * schedule stay on "ma/wo/vr" forever instead of an arbitrary spread. Any
+ * mismatch (wrong count, out-of-range weekday) falls back to the default
+ * pattern rather than producing a broken plan.
  */
-export function distributeSessions(strengthDays: StrengthDayInput[], cardioSessions: CardioSessionInput[], goal: Goal): WeekPlanEntry[] {
-  const pattern = STRENGTH_WEEKDAY_PATTERNS[strengthDays.length] ?? WEEKDAYS.slice(0, strengthDays.length);
+export function distributeSessions(
+  strengthDays: StrengthDayInput[],
+  cardioSessions: CardioSessionInput[],
+  goal: Goal,
+  preferredWeekdays?: Weekday[],
+): WeekPlanEntry[] {
+  const dedupedPreferred = preferredWeekdays ? [...new Set(preferredWeekdays)].sort((a, b) => a - b) : undefined;
+  const pattern =
+    dedupedPreferred && dedupedPreferred.length === strengthDays.length
+      ? dedupedPreferred
+      : (STRENGTH_WEEKDAY_PATTERNS[strengthDays.length] ?? WEEKDAYS.slice(0, strengthDays.length));
   const entries: WeekPlanEntry[] = pattern.map((weekday, index) => ({
     weekday,
     strengthDayId: strengthDays[index]?.id,

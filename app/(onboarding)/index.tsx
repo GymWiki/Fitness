@@ -7,6 +7,7 @@ import { Card } from '@/components/Card';
 import { ProgressDots } from '@/components/ProgressDots';
 import { PhysiquePicker } from '@/components/PhysiquePicker';
 import { SelectableCard } from '@/components/SelectableCard';
+import { WeekdayPicker } from '@/components/WeekdayPicker';
 import { useAuth } from '@/lib/auth';
 import { BMI_CATEGORY_LABELS, BMI_CAVEAT, bmiCategory, calculateBmi } from '@/lib/bmi';
 import type { Gender } from '@/lib/profile';
@@ -65,6 +66,7 @@ export default function IntakeScreen() {
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel | null>(null);
   const [daysPerWeek, setDaysPerWeek] = useState<number | null>(null);
   const [equipment, setEquipment] = useState<EquipmentType | null>(null);
+  const [preferredWeekdays, setPreferredWeekdays] = useState<number[]>([]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +92,18 @@ export default function IntakeScreen() {
   const canGoNext =
     (step === 'physique' && physique !== null) ||
     (step === 'measurements' && parsedWeightKg !== null && parsedHeightCm !== null) ||
-    (step === 'preferences' && experienceLevel !== null && daysPerWeek !== null && equipment !== null);
+    (step === 'preferences' &&
+      experienceLevel !== null &&
+      daysPerWeek !== null &&
+      equipment !== null &&
+      preferredWeekdays.length === daysPerWeek);
+
+  function selectDaysPerWeek(value: number) {
+    setDaysPerWeek(value);
+    // A previous weekday selection almost never still matches a new day count, so it's cleared
+    // rather than silently kept partial/oversized — better to ask again than to guess.
+    if (preferredWeekdays.length !== value) setPreferredWeekdays([]);
+  }
 
   function goNext() {
     if (stepIndex < STEPS.length - 1) setStepIndex(stepIndex + 1);
@@ -110,6 +123,7 @@ export default function IntakeScreen() {
         gender,
         birthYear: parsedBirthYear,
         targetWeightKg: parsedTargetWeightKg,
+        preferredWeekdays,
       });
       await saveMeasurement(session.user.id, {
         weightKg: parsedWeightKg,
@@ -242,12 +256,23 @@ export default function IntakeScreen() {
               <Pressable
                 key={value}
                 style={[styles.dayButton, daysPerWeek === value && styles.dayButtonSelected]}
-                onPress={() => setDaysPerWeek(value)}
+                onPress={() => selectDaysPerWeek(value)}
               >
                 <Text style={[styles.dayButtonText, daysPerWeek === value && styles.dayButtonTextSelected]}>{value}</Text>
               </Pressable>
             ))}
           </View>
+
+          {daysPerWeek !== null && (
+            <>
+              <FieldLabel>Op welke dagen train je het liefst?</FieldLabel>
+              <Text style={styles.body}>
+                We plannen je schema vanaf nu op deze vaste dagen, 2 weken vooruit — zo weet je altijd zonder gokken of
+                vandaag een trainingsdag is.
+              </Text>
+              <WeekdayPicker selected={preferredWeekdays} requiredCount={daysPerWeek} onChange={setPreferredWeekdays} />
+            </>
+          )}
 
           <FieldLabel>Materiaal</FieldLabel>
           {EQUIPMENT_OPTIONS.map((option) => (

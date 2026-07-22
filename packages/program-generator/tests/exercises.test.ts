@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_MUSCLE_GROUPS, candidateExercisesForMuscleGroup, MOVEMENT_SLOTS } from '../src/exercises';
+import { ALL_MUSCLE_GROUPS, candidateExercisesForMuscleGroup, isHeavyLowerBodyDay, MOVEMENT_SLOTS } from '../src/exercises';
 
 describe('candidateExercisesForMuscleGroup', () => {
   it('returns every gym variant that targets the same muscle group', () => {
@@ -51,5 +51,36 @@ describe('ALL_MUSCLE_GROUPS', () => {
     const expected = new Set(Object.values(MOVEMENT_SLOTS).map((slot) => slot.muscleGroup));
     expect(new Set(ALL_MUSCLE_GROUPS)).toEqual(expected);
     expect(ALL_MUSCLE_GROUPS.length).toBe(expected.size);
+  });
+});
+
+describe('isHeavyLowerBodyDay', () => {
+  it('is true for a day with a compound squat', () => {
+    expect(isHeavyLowerBodyDay([{ exerciseType: 'compound', muscleGroup: 'Benen' }])).toBe(true);
+  });
+
+  it('is true for a day with a compound hinge lift', () => {
+    expect(isHeavyLowerBodyDay([{ exerciseType: 'compound', muscleGroup: 'Bilspieren/Hamstrings' }])).toBe(true);
+  });
+
+  it('is false for isolation leg work only (e.g. leg extension day)', () => {
+    expect(isHeavyLowerBodyDay([{ exerciseType: 'isolation', muscleGroup: 'Benen' }])).toBe(false);
+  });
+
+  it('is false for an upper-body day', () => {
+    expect(
+      isHeavyLowerBodyDay([
+        { exerciseType: 'compound', muscleGroup: 'Borst' },
+        { exerciseType: 'compound', muscleGroup: 'Rug' },
+      ]),
+    ).toBe(false);
+  });
+
+  it('is false for an empty (e.g. cardio-only) day', () => {
+    expect(isHeavyLowerBodyDay([])).toBe(false);
+  });
+
+  it('handles a null muscleGroup (cardio exercises) without throwing', () => {
+    expect(isHeavyLowerBodyDay([{ exerciseType: null, muscleGroup: null }])).toBe(false);
   });
 });

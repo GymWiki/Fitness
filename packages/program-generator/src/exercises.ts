@@ -135,6 +135,26 @@ export const MOVEMENT_SLOTS: Record<string, MovementSlot> = {
  */
 export const ALL_MUSCLE_GROUPS: string[] = [...new Set(Object.values(MOVEMENT_SLOTS).map((slot) => slot.muscleGroup))];
 
+/** The muscle groups trained by the squat/hinge slots — the compound lower-body lifts a weekly scheduler needs to protect recovery around. */
+const HEAVY_LOWER_BODY_MUSCLE_GROUPS = new Set(
+  Object.values(MOVEMENT_SLOTS)
+    .filter((slot) => (slot.id === 'squat' || slot.id === 'hinge') && slot.exerciseType === 'compound')
+    .map((slot) => slot.muscleGroup),
+);
+
+/**
+ * True when a day's exercises include a compound lower-body lift (squat or
+ * hinge pattern) — used to tell the weekly scheduler which days are "heavy
+ * leg days" so it can keep intensive cardio off the day before them. Derived
+ * from the exercises actually persisted for a day rather than a stored flag,
+ * so it stays correct even after a manual exercise swap in the Schema tab.
+ */
+export function isHeavyLowerBodyDay(exercises: Array<{ exerciseType: string | null; muscleGroup: string | null }>): boolean {
+  return exercises.some(
+    (exercise) => exercise.exerciseType === 'compound' && exercise.muscleGroup !== null && HEAVY_LOWER_BODY_MUSCLE_GROUPS.has(exercise.muscleGroup),
+  );
+}
+
 /**
  * Candidate exercise names a user could swap into a schema slot: every A/B
  * variant, across every movement slot, that targets the same muscle group

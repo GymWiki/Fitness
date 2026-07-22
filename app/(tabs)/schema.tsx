@@ -8,7 +8,10 @@ import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
 import { ChevronDownIcon, ChevronUpIcon, EditIcon, PlusIcon, SwapIcon, TrashIcon } from '@/components/icons';
 import { useAuth } from '@/lib/auth';
+import { addDaysIso } from '@fitness/adaptation-planner';
+import { todayLocalDateString } from '@/lib/dates';
 import { useProfile } from '@/lib/profile';
+import { ensureScheduledWindow, fetchScheduledSessions, type ScheduledSessionRow } from '@/lib/schedule';
 import {
   addDay,
   fetchSchemaProgram,
@@ -25,6 +28,37 @@ import { layout } from '@/theme/layout';
 import { radii } from '@/theme/radii';
 import { spacing } from '@/theme/spacing';
 import { typography } from '@/theme/typography';
+
+const WINDOW_DAYS = 14;
+const SHORT_WEEKDAY_LABELS: Record<number, string> = { 1: 'Ma', 2: 'Di', 3: 'Wo', 4: 'Do', 5: 'Vr', 6: 'Za', 0: 'Zo' };
+const STATUS_LABEL: Record<ScheduledSessionRow['status'], string> = { planned: '', done: 'Gedaan', missed: 'Gemist', rest: 'Rustdag' };
+
+function formatShortWeekdayDate(dateIso: string): string {
+  const [year, month, day] = dateIso.split('-').map(Number) as [number, number, number];
+  const date = new Date(year, month - 1, day);
+  return `${SHORT_WEEKDAY_LABELS[date.getDay()]} ${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`;
+}
+
+function TwoWeekOverview({ rows, isToday }: { rows: ScheduledSessionRow[]; isToday: (dateIso: string) => boolean }) {
+  return (
+    <Card style={styles.scheduleCard}>
+      <Text style={styles.sectionTitle}>Komende 2 weken</Text>
+      {rows.map((row) => {
+        const today = isToday(row.date);
+        const label = row.programDayId ? `Dag ${row.programDayOrder}: ${row.programDayName}` : 'Rustdag';
+        return (
+          <View key={row.id} style={[styles.scheduleRow, today && styles.scheduleRowToday]}>
+            <Text style={[styles.scheduleDate, today && styles.scheduleDateToday]}>{formatShortWeekdayDate(row.date)}</Text>
+            <Text style={[styles.scheduleLabel, !row.programDayId && styles.scheduleLabelRest]}>{label}</Text>
+            {STATUS_LABEL[row.status] !== '' && (
+              <Text style={[styles.scheduleStatus, row.status === 'missed' && styles.scheduleStatusMissed]}>{STATUS_LABEL[row.status]}</Text>
+            )}
+          </View>
+        );
+      })}
+    </Card>
+  );
+}
 
 const KIND_LABEL: Record<SchemaExercise['kind'], string> = {
   strength: 'Kracht',
@@ -250,6 +284,7 @@ export default function SchemaScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAddingDay, setIsAddingDay] = useState(false);
+  const [scheduleRows, setScheduleRows] = useState<ScheduledSessionRow[]>([]);
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -261,6 +296,14 @@ export default function SchemaScreen() {
       setError(err instanceof Error ? err.message : 'Kon je schema niet laden.');
     } finally {
       setIsLoading(false);
+    }
+
+    try {
+      await ensureScheduledWindow(session.user.id);
+      const today = todayLocalDateString();
+      setScheduleRows(await fetchScheduledSessions(session.user.id, today, addDaysIso(today, WINDOW_DAYS - 1)));
+    } catch {
+      setScheduleRows([]); // no calendar plan available (not set up yet, or offline) — the section just doesn't render
     }
   }, [session]);
 
@@ -310,6 +353,22 @@ export default function SchemaScreen() {
           <EmptyState title="Nog geen programma" body="Zodra je de intake afrondt, kun je hier je schema bekijken en aanpassen." />
         )}
 
+        {!isLoading && !error && program && scheduleRows.length > 0 && (
+          <TwoWeekOverview rows={scheduleRows} isToday={(dateIso) => dateIso === todayLocalDateString()} />
+        )}
+
+        {!isLoading && !error && program && scheduleRows.length === 0 && !profile?.preferredWeekdays && (
+          <Pressable onPress={() => router.push('/(tabs)/profile')}>
+            <Card style={styles.scheduleNudgeCard}>
+              <Text style={styles.scheduleNudgeTitle}>Wanneer train je?</Text>
+              <Text style={styles.scheduleNudgeBody}>
+                Stel je voorkeursdagen in bij Profiel voor een concreet 2-wekenoverzicht — dan hoef je nooit meer te
+                gokken of vandaag een trainingsdag is.
+              </Text>
+            </Card>
+          </Pressable>
+        )}
+
         {!isLoading &&
           !error &&
           program &&
@@ -349,6 +408,61 @@ const styles = StyleSheet.create({
   subtitle: {
     ...typography.bodySecondary,
     marginBottom: spacing.sm,
+  },
+  scheduleCard: {
+    gap: 2,
+  },
+  sectionTitle: {
+    ...typography.heading,
+    marginBottom: spacing.sm,
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  scheduleRowToday: {
+    backgroundColor: colors.accentMuted,
+    marginHorizontal: -spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.sm,
+    borderTopWidth: 0,
+  },
+  scheduleDate: {
+    ...typography.caption,
+    width: 56,
+  },
+  scheduleDateToday: {
+    color: colors.accent,
+    fontWeight: '700',
+  },
+  scheduleLabel: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  scheduleLabelRest: {
+    color: colors.textSecondary,
+    fontWeight: '400',
+  },
+  scheduleStatus: {
+    ...typography.caption,
+  },
+  scheduleStatusMissed: {
+    color: colors.danger,
+  },
+  scheduleNudgeCard: {
+    gap: spacing.xs,
+  },
+  scheduleNudgeTitle: {
+    ...typography.bodyStrong,
+  },
+  scheduleNudgeBody: {
+    ...typography.bodySecondary,
   },
   switchGoalLink: {
     color: colors.accent,

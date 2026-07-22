@@ -10,6 +10,7 @@ import {
   type WeekLog,
   type WeekSessionLog,
 } from '@fitness/adaptation-planner';
+import { todayLocalDateString } from './dates';
 import { supabase } from './supabase';
 
 export interface WeekReview {
@@ -219,4 +220,18 @@ export async function applyWeekReview(review: WeekReview, adjustments: Adjustmen
     .update({ current_week_number: review.weekNumber + 1 })
     .eq('id', review.programId);
   if (programUpdateError) throw programUpdateError;
+
+  // Adjustments only ever change what's scheduled from tomorrow onward — a
+  // day that's already passed (or is today) keeps whatever was actually
+  // planned for it, never retroactively. Clearing just the strictly-future
+  // planned/rest rows lets `ensureScheduledWindow` regenerate them the next
+  // time it runs, against the now-updated program (fewer active days,
+  // different set counts, etc.) instead of the stale plan from before.
+  const { error: clearScheduleError } = await supabase
+    .from('scheduled_sessions')
+    .delete()
+    .eq('program_id', review.programId)
+    .in('status', ['planned', 'rest'])
+    .gt('scheduled_date', todayLocalDateString());
+  if (clearScheduleError) throw clearScheduleError;
 }

@@ -55,7 +55,7 @@ function createMockSupabase(overrides: {
   function makeChain(table: string) {
     const localCalls: CallEntry[] = [];
     const chain: Record<string, unknown> = {};
-    for (const method of ['insert', 'update', 'select', 'eq', 'neq', 'single']) {
+    for (const method of ['insert', 'update', 'delete', 'select', 'eq', 'neq', 'in', 'gte', 'single']) {
       chain[method] = (...args: unknown[]) => {
         const entry = { table, op: method, args };
         calls.push(entry);
@@ -81,6 +81,7 @@ const profile: Profile = {
   gender: null,
   birthYear: null,
   targetWeightKg: null,
+  preferredWeekdays: null,
 };
 
 function findIndex(calls: CallEntry[], table: string, op: string): number {
@@ -137,6 +138,22 @@ describe('switchGoal', () => {
       expect(row.progression_rule).toBeDefined();
       expect(row.progression_rule).not.toBeNull();
     }
+  });
+
+  it('clears the future calendar schedule (planned/rest, from today) after archiving the old program', async () => {
+    const mock = createMockSupabase();
+    mockSupabase.from.mockImplementation(mock.from);
+
+    await switchGoal('user-1', profile, 'strong_powerful');
+
+    const programArchiveIndex = findIndex(mock.calls, 'programs', 'update');
+    const scheduleDeleteIndex = findIndex(mock.calls, 'scheduled_sessions', 'delete');
+    expect(scheduleDeleteIndex).toBeGreaterThan(programArchiveIndex);
+
+    const scheduleCalls = mock.calls.filter((c, i) => c.table === 'scheduled_sessions' && i >= scheduleDeleteIndex);
+    expect(scheduleCalls.some((c) => c.op === 'eq' && c.args[0] === 'user_id' && c.args[1] === 'user-1')).toBe(true);
+    expect(scheduleCalls.some((c) => c.op === 'in' && c.args[0] === 'status' && (c.args[1] as string[]).sort().join(',') === 'planned,rest')).toBe(true);
+    expect(scheduleCalls.some((c) => c.op === 'gte' && c.args[0] === 'scheduled_date')).toBe(true);
   });
 
   it('schemawissel behoudt logs: never archives the old program if creating the new one fails', async () => {

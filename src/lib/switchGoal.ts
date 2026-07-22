@@ -1,4 +1,5 @@
 import { generateProgram, type IntakeAnswers } from '@fitness/program-generator';
+import { todayLocalDateString } from './dates';
 import { GOAL_LABELS, goalForPhysique, type Physique } from './physique';
 import { insertProgramStructure } from './programs';
 import { updateProfile, type Profile } from './profile';
@@ -61,6 +62,23 @@ export async function switchGoal(userId: string, profile: Profile, newPhysique: 
       .eq('user_id', userId)
       .eq('status', 'active')
       .neq('id', newProgramId);
+    if (error) throw error;
+  });
+
+  // The old program's future calendar plan no longer applies — clears it
+  // (today included, since a goal switch replaces the whole schema
+  // immediately, not prospectively like a weekly adjustment) so
+  // `ensureScheduledWindow` can freely regenerate the same date range for
+  // the new program without colliding with the old program's rows on the
+  // (user_id, scheduled_date) unique constraint. Already-completed/missed
+  // days stay untouched — those are history, not planning.
+  await withStage('Toekomstige planning opschonen', async () => {
+    const { error } = await supabase
+      .from('scheduled_sessions')
+      .delete()
+      .eq('user_id', userId)
+      .in('status', ['planned', 'rest'])
+      .gte('scheduled_date', todayLocalDateString());
     if (error) throw error;
   });
 
