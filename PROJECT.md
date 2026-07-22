@@ -915,6 +915,82 @@ app-uitleg/bronnen in het bestaande format, en zoeken op "DOMS" (met
 categories heen (Uitvoering & techniek + Overig). Geen consolefouten.
 Achteraf volledig teruggedraaid.
 
+**Readiness als herstelringen (vervangt het lichaamsdiagram).**
+
+*Waarom.* Het anatomische lichaamsdiagram uit stap 11 (en de daaropvolgende
+verfijning) is volledig vervangen door een grid van cirkelvormige
+voortgangsringen, één per spiergroep, in de stijl van Apple Watch
+activiteitsringen — puur data-gedreven, geen illustratie nodig. De
+onderliggende herstellogica (`estimateRecoveryState` in
+`@fitness/progression-engine`) is volledig ongewijzigd; dit is uitsluitend
+een vervanging van de visuele laag.
+
+*Ringvulling is monotoon, kleur draagt de urgentie.* Nieuwe
+`recoveryReadinessPercent()` (`src/lib/recoveryReadiness.ts`) loopt van 0%
+naar 100% uitsluitend tijdens de `'recovering'`-fase (evenredig met
+`hoursSinceSession / windowStartHours`) en blijft daarna voorgoed op 100%
+staan (`ready`/`window_closing`/`window_passed`/`no_data`) — fysiologisch
+"herstelt" een spier nooit terug naar minder hersteld. Verdere nuance (bv.
+"het venster sluit bijna") wordt uitsluitend via de al bestaande
+`recoveryColor()` uitgedrukt, ongewijzigd hergebruikt, niet opnieuw
+geïnterpreteerd — ook `no_data` blijft bewust groen (klaar om te trainen),
+zoals eerder vastgesteld, ook al noemde de opdracht losjes "grijs voor lang
+niet getraind"; dat klopt feitelijk bij `window_passed`, niet bij
+`no_data`.
+
+*Sorteervolgorde: venster-sluit boven gewoon-klaar.* Nieuwe
+`compareMuscleRecoveryPriority()` zet `window_closing` bóven `ready` in de
+"wat nu te doen"-volgorde, ook al vullen beide de ring voor 100% — een
+sluitend venster is tijdgevoelig (nu trainen of de bonus missen), gewoon
+klaar niet. Binnen `recovering` sorteert de spiergroep die het dichtst bij
+zijn venster zit het hoogst.
+
+*Herbruikbare ring + tegel.* `RecoveryRing.tsx` is de generieke SVG-ring
+(`stroke-dasharray`/`stroke-dashoffset`, geroteerd -90° zodat de vulling om
+12 uur begint) die alleen percentage en kleur als props neemt.
+`MuscleRecoveryRing.tsx` combineert ring + spiergroepnaam + statuslabel tot
+één tegel (kleur is nooit de enige informatiedrager, zelfde eis als
+eerder). `onPress` is bewust optioneel: in het volledige grid
+(`app/readiness.tsx`) opent elke tegel de tik-kaart, maar in de compacte
+dashboardkaart (`ReadinessCard.tsx`) is de hele kaart al één tikdoel
+(`DashboardCardShell`) — een tweede geneste `Pressable` per ring daarbinnen
+zou React Native's aanraakafhandeling in de weg zitten, dus zonder
+`onPress` rendert de tegel als platte `View`.
+
+*Plaatsing.* `app/readiness.tsx` (nieuw, vervangt `app/body-diagram.tsx`)
+toont het volledige grid, gesorteerd op prioriteit, plus legenda en
+tik-kaart (laatst getraind, statuslabel, actuele uitleg, link naar de FAQ
+over supercompensatie). `ReadinessCard.tsx` is herschreven om de 4 hoogst
+geprioriteerde ringen compact te tonen i.p.v. de eerdere "N spiergroepen
+klaar"-telling, met dezelfde "hele kaart is het tikdoel"-navigatie naar
+`/readiness`.
+
+*Opgeruimd.* `BodyDiagram.tsx`, `bodyDiagramRegions.ts` (+ test) en
+`app/body-diagram.tsx` zijn verwijderd — geen andere plek in de codebase
+verwees er nog naar. `describeRegionTap()`/`RegionTapInfo` zijn behouden
+(de output, niet de SVG-geometrie, was nog relevant) en hernoemd naar
+`describeMuscleRecoveryTap()`/`MuscleRecoveryTapInfo` in het nieuwe
+`recoveryReadiness.ts`.
+
+*Tests.* 14 nieuwe tests in `recoveryReadiness.test.ts`:
+`recoveryReadinessPercent` (0% net getraind, 50% halverwege, nooit boven
+100%, altijd 100% buiten `recovering`), `recoveryRingLabel` (het
+"18u te gaan"-format uit de opdracht zelf, nooit negatief, valt terug op
+`STATUS_LABEL` voor elke andere status), `describeMuscleRecoveryTap`
+(overgenomen van de oude `describeRegionTap`-tests) en
+`compareMuscleRecoveryPriority` (venster-sluit boven klaar, klaar boven
+geen-data boven herstellend, venster-voorbij altijd laatst, binnen
+herstellend op afstand-tot-venster).
+
+*Verificatie.* Via dezelfde tijdelijke-previewroute-aanpak als eerder
+(`app/_readiness-preview.tsx`, geregistreerd in `app/_layout.tsx`, web-
+export + Playwright-screenshot, achteraf volledig teruggedraaid) met
+gefabriceerde `RecoveryEstimate`-waarden voor alle vijf statussen:
+ringvulling en -kleur kloppen per status, de compacte 4-ringen-rij en het
+volledige 10-ringen-grid tonen beide de juiste sortering, en tikken op een
+ring (getest op "Rug", status `recovering`) toont de juiste tik-kaart met
+statuslabel en actuele uitleg. Geen consolefouten.
+
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
   platform-onafhankelijk TypeScript-package (geen React Native-, Expo- of
   Supabase-imports). De Expo-app hangt eraan via `@fitness/progression-engine`.
@@ -1625,7 +1701,7 @@ app/                        Expo Router routes
   faq.tsx                        "Wetenschap": doorzoekbare, categoriseerbare FAQ met bronvermelding
   food-scan.tsx                  Barcode scannen (expo-camera) -> OFF-cache-opzoeking -> FoodLogForm
   food-search.tsx                Naam zoeken (expliciete actie, geen live type-ahead) -> FoodLogForm
-  body-diagram.tsx               Volledig-scherm lichaamsdiagram (Readiness-kaart tikt hier naartoe) — eigen databron
+  readiness.tsx                  Volledig grid van herstelringen (Readiness-kaart tikt hier naartoe) — eigen databron, sortering + tik-kaart + legenda
 src/
   components/
     SyncStatusBadge.tsx        Offline / N niet gesynchroniseerd / Gesynchroniseerd — workout + Vandaag
@@ -1637,13 +1713,14 @@ src/
     icons.tsx                    Dependency-vrije SVG-icoonset (tab-iconen + PhysiqueSilhouette-placeholder + FlameIcon)
     NutrientProgressBar.tsx       Gevulde-balk voortgang voor een dagtotaal (calorieën/macro) t.o.v. doel
     FoodLogForm.tsx                Gedeeld door scan/zoeken/handmatig: hoeveelheid + macro-preview + loggen + favoriet
-    BodyDiagram.tsx                Lichaamsdiagram (dashboard-Readiness-kaart tikt door naar /body-diagram, dat dit rendert): voor-/achterkant-toggle, tikbare spiergroep-regio's, legenda, tik-kaart
+    RecoveryRing.tsx                Herbruikbare Apple Watch-stijl voortgangsring (SVG, stroke-dasharray/dashoffset) — puur presentational, percent + kleur als props
+    MuscleRecoveryRing.tsx          Eén grid-tegel: ring + spiergroepnaam + statuslabel; optionele onPress (leeg = geneste-Pressable-val vermeden in de compacte kaart)
     WeekOverview.tsx               Dashboard: streak-regel + 7-daagse weekoverzicht-strip, eigen fetch (fetchActiveProgram + fetchWorkoutDates)
     DashboardCardShell.tsx        Gedeelde kop/laadstatus/CTA-schil voor de vier dashboardkaarten — presentational only
     TrainingTodayCard.tsx          Dashboardkaart 1: eigen fetch (fetchActiveProgram), naam/omschrijving/aantal oefeningen + "Start workout"
     NutritionSummaryCard.tsx       Dashboardkaart 2: eigen fetch (targets + dagtotalen + eiwit-tekortsignaal), compacte calorieënbalk
     ProgressSummaryCard.tsx        Dashboardkaart 3: eigen fetch (fetchWeeklyVolume/fetchMonthlyWorkoutCount), twee StatTiles
-    ReadinessCard.tsx              Dashboardkaart 4: eigen fetch (fetchAllMuscleGroupRecoveryEstimates), "N spiergroepen klaar"
+    ReadinessCard.tsx              Dashboardkaart 4: eigen fetch (fetchAllMuscleGroupRecoveryEstimates), toont de 4 meest relevante herstelringen (compact)
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
     auth.tsx                   AuthProvider + useAuth hook
@@ -1669,11 +1746,11 @@ src/
     adjustmentLabels.ts          Gedeelde Nederlandse labels per AdjustmentType (week-review + geschiedenis)
     dates.ts                     formatShortDate() — gedeeld door workout-, historie- en geschiedenisscherm
     recovery.ts                   fetchRecoveryEstimate() + fetchAllMuscleGroupRecoveryEstimates() — cross-programma laatste-sessie-lookup + estimateRecoveryState()
-    recoveryLabels.ts              STATUS_LABEL / STATUS_COLOR — React Native-vrij, gedeeld door BodyDiagram.tsx en pure src/lib-modules
+    recoveryLabels.ts              STATUS_LABEL / STATUS_COLOR — React Native-vrij, gedeeld door de readiness-ringen (app/readiness.tsx) en pure src/lib-modules
     recoveryColor.ts / recoveryColor.test.ts
-                                  recoveryColor() — vloeiende kleurgradiënt voor het lichaamsdiagram, puur op basis van bestaande RecoveryEstimate-velden
-    bodyDiagramRegions.ts / bodyDiagramRegions.test.ts
-                                  Regiogeometrie per spiergroep (voor/achter) + describeRegionTap()
+                                  recoveryColor() — vloeiende kleurgradiënt voor de herstelringen, puur op basis van bestaande RecoveryEstimate-velden
+    recoveryReadiness.ts / recoveryReadiness.test.ts
+                                  recoveryReadinessPercent() (ringvulling) + recoveryRingLabel() + describeMuscleRecoveryTap() (tik-kaart-tekst) + compareMuscleRecoveryPriority() (sortering "klaar om te trainen" eerst)
     faqContent.ts                 FAQ_ENTRIES + searchFaqEntries() — gestructureerde, doorzoekbare FAQ-content
     faqContent.test.ts             Controleert dat elke FAQ-entry minstens één bron met geldige url/auteur/jaar heeft
     openFoodFacts.ts / openFoodFacts.test.ts
@@ -1785,7 +1862,7 @@ Actions-tab (in plaats van stil niets te doen), dus het ergste geval is
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages + root src/lib samen (219 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (223 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```

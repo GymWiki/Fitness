@@ -1,11 +1,17 @@
 import type { RecoveryEstimate } from '@fitness/progression-engine';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { compareMuscleRecoveryPriority } from '@/lib/recoveryReadiness';
 import { fetchAllMuscleGroupRecoveryEstimates } from '@/lib/recovery';
 import { colors } from '@/theme/colors';
+import { spacing } from '@/theme/spacing';
 import { CheckIcon } from './icons';
 import { DashboardCardShell } from './DashboardCardShell';
+import { MuscleRecoveryRing } from './MuscleRecoveryRing';
+
+const COMPACT_RING_COUNT = 4;
+const COMPACT_RING_SIZE = 44;
 
 export function ReadinessCard({ userId }: { userId: string }) {
   const router = useRouter();
@@ -31,7 +37,9 @@ export function ReadinessCard({ userId }: { userId: string }) {
     }, [load]),
   );
 
-  const readyCount = estimates ? [...estimates.values()].filter((estimate) => estimate.status === 'ready').length : 0;
+  const topMuscleGroups = estimates
+    ? [...estimates.entries()].sort(compareMuscleRecoveryPriority).slice(0, COMPACT_RING_COUNT)
+    : [];
 
   return (
     <DashboardCardShell
@@ -39,19 +47,22 @@ export function ReadinessCard({ userId }: { userId: string }) {
       icon={<CheckIcon size={18} color={colors.accent} />}
       isLoading={isLoading}
       error={error}
-      onPress={() => router.push('/body-diagram')}
-      ctaLabel="Bekijk lichaam"
+      onPress={() => router.push('/readiness')}
+      ctaLabel="Bekijk volledig overzicht"
     >
-      <Text style={styles.detail}>
-        {readyCount > 0 ? `${readyCount} spiergroep${readyCount === 1 ? '' : 'en'} klaar om te trainen` : 'Nog geen spiergroep in het optimale venster'}
-      </Text>
+      <View style={styles.ringRow}>
+        {topMuscleGroups.map(([muscleGroup, estimate]) => (
+          <MuscleRecoveryRing key={muscleGroup} muscleGroup={muscleGroup} estimate={estimate} size={COMPACT_RING_SIZE} />
+        ))}
+      </View>
     </DashboardCardShell>
   );
 }
 
 const styles = StyleSheet.create({
-  detail: {
-    color: colors.textSecondary,
-    fontSize: 13,
+  ringRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
 });

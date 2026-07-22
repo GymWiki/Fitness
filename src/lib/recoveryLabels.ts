@@ -4,7 +4,7 @@ import { colors } from '@/theme/colors';
 /**
  * Single source of truth for recovery-status wording/color, shared by
  * `RecoveryIndicator` (the small dot on Vandaag's exercise rows) and the
- * body-diagram's legend/tap card. Deliberately plain TypeScript (no
+ * readiness rings' legend/tap card (app/readiness.tsx). Deliberately plain TypeScript (no
  * react-native imports) so pure `src/lib` modules can depend on it too —
  * importing straight from a `.tsx` component would pull react-native's
  * untranspiled internals into places that need to stay framework-free

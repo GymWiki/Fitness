@@ -2,20 +2,20 @@ import type { RecoveryEstimate } from '@fitness/progression-engine';
 import { colors } from '@/theme/colors';
 
 /**
- * Maps a `RecoveryEstimate` to a single hex color for the body-diagram
- * dashboard — a display-only concern, built entirely from fields the
- * recovery function already exposes (status, hoursSinceSession,
+ * Maps a `RecoveryEstimate` to a single hex color for the readiness rings
+ * (see app/readiness.tsx) — a display-only concern, built entirely from
+ * fields the recovery function already exposes (status, hoursSinceSession,
  * windowStartHours, windowEndHours). No new recovery thresholds or math
  * live here; this never recomputes when a muscle group is "ready", it only
  * decides what shade to paint the already-computed answer.
  *
  * The result is a continuous gradient rather than five flat colors, so the
- * diagram reads like a meter (matching the supercompensation curve's actual
+ * rings read like a meter (matching the supercompensation curve's actual
  * shape: fatigue -> rising readiness -> peak -> gentle decay) instead of a
  * simple traffic light: red (just trained) -> orange (approaching the
  * window) -> green (ready, the peak) -> orange-tinted green (window
  * closing) -> grey (window passed). Status is always additionally shown as
- * text elsewhere (see STATUS_LABEL in RecoveryIndicator.tsx) — color is
+ * text elsewhere (see STATUS_LABEL in recoveryLabels.ts) — color is
  * never the only signal.
  */
 export function recoveryColor(estimate: RecoveryEstimate): string {
