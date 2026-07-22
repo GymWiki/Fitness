@@ -1,7 +1,7 @@
 import type { RecoveryCurve, RecoveryCurvePoint, RecoveryEstimate } from '@fitness/progression-engine';
 import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet } from 'react-native';
-import Svg, { Line as SvgLine, Polyline, Rect, Circle, Text as SvgText } from 'react-native-svg';
+import Svg, { Line as SvgLine, Polyline, Polygon, Circle, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { recoveryColor } from '@/lib/recoveryColor';
 import { colors } from '@/theme/colors';
 import { radii } from '@/theme/radii';
@@ -36,13 +36,24 @@ function buildSegments(points: RecoveryCurvePoint[]): RecoveryCurvePoint[][] {
   return runs;
 }
 
+/** Builds a closed polygon tracing the curve across `points`, closed along the baseline — i.e. the filled area between the line and baseline for that stretch. */
+function areaPoints(points: RecoveryCurvePoint[], baselineY: number, hoursToX: (h: number) => number, levelToY: (l: number) => number): string {
+  if (points.length === 0) return '';
+  const curvePart = points.map((point) => `${hoursToX(point.hoursFromSession)},${levelToY(point.level)}`);
+  const last = points[points.length - 1]!;
+  const first = points[0]!;
+  return [...curvePart, `${hoursToX(last.hoursFromSession)},${baselineY}`, `${hoursToX(first.hoursFromSession)},${baselineY}`].join(' ');
+}
+
 /**
- * Illustrative supercompensation curve for one muscle group — dip, rise,
- * peak (shaded = the supercompensation window), gradual decay. Renders
- * `generateRecoveryCurve`'s output as-is; every number on this chart
- * (including the "now" dot) comes straight from that curve, never a
- * separate calculation, so it can't contradict the ring/tap-card for the
- * same muscle group.
+ * Illustrative supercompensation curve for one muscle group — one smooth
+ * line through four phases (dip below baseline, back up, peak above
+ * baseline, decay back down), with the area under/over baseline filled to
+ * make the "loss" (dip) and "gain" (supercompensation window) regions
+ * visually distinct. Renders `generateRecoveryCurve`'s output as-is; every
+ * number on this chart (including the "now" dot) comes straight from that
+ * curve, never a separate calculation, so it can't contradict the
+ * ring/tap-card for the same muscle group.
  */
 export function RecoveryCurveChart({ curve, estimate, width }: { curve: RecoveryCurve; estimate: RecoveryEstimate; width: number }) {
   const fade = useRef(new Animated.Value(1)).current;
@@ -60,6 +71,17 @@ export function RecoveryCurveChart({ curve, estimate, width }: { curve: Recovery
 
   const hoursToX = (hours: number) => PADDING_X + (maxHours === 0 ? 0 : (hours / maxHours) * (width - PADDING_X * 2));
   const levelToY = (level: number) => CHART_HEIGHT - PADDING_Y - ((level - minLevel) / levelRange) * (CHART_HEIGHT - PADDING_Y * 2);
+  const baselineY = levelToY(curve.baseline);
+
+  // Split the sampled points into the three fill regions: below-baseline dip
+  // (phase 1+2), above-baseline solid peak build-up (phase 3), and the
+  // above-baseline decay back to baseline (phase 4, filled with a fading
+  // variant of the same "gain" color). `generateRecoveryCurve` guarantees
+  // windowStartHours/peakHours/decayEndHours are exact sampled points, so
+  // these boundaries line up precisely with no gap or overlap.
+  const dipPoints = curve.points.filter((point) => point.hoursFromSession <= curve.windowStartHours);
+  const gainSolidPoints = curve.points.filter((point) => point.hoursFromSession >= curve.windowStartHours && point.hoursFromSession <= curve.peakHours);
+  const gainFadePoints = curve.points.filter((point) => point.hoursFromSession >= curve.peakHours && point.hoursFromSession <= curve.decayEndHours);
 
   const segments = buildSegments(curve.points);
   const nowX = hoursToX(curve.now.hoursFromSession);
@@ -76,23 +98,25 @@ export function RecoveryCurveChart({ curve, estimate, width }: { curve: Recovery
   return (
     <Animated.View style={[styles.card, { opacity: fade }]}>
       <Svg width={width} height={CHART_HEIGHT}>
-        <Rect
-          x={hoursToX(curve.windowStartHours)}
-          y={0}
-          width={Math.max(0, hoursToX(curve.windowEndHours) - hoursToX(curve.windowStartHours))}
-          height={CHART_HEIGHT}
-          fill={colors.accentMuted}
-        />
+        <Defs>
+          <LinearGradient id="gainFade" x1="0%" y1="0%" x2="100%" y2="0%">
+            <Stop offset="0%" stopColor={colors.accent} stopOpacity={0.22} />
+            <Stop offset="100%" stopColor={colors.accent} stopOpacity={0} />
+          </LinearGradient>
+        </Defs>
+        {dipPoints.length > 1 && <Polygon points={areaPoints(dipPoints, baselineY, hoursToX, levelToY)} fill={colors.warningMuted} />}
+        {gainSolidPoints.length > 1 && <Polygon points={areaPoints(gainSolidPoints, baselineY, hoursToX, levelToY)} fill={colors.accentMuted} />}
+        {gainFadePoints.length > 1 && <Polygon points={areaPoints(gainFadePoints, baselineY, hoursToX, levelToY)} fill="url(#gainFade)" />}
         <SvgLine
           x1={PADDING_X}
-          y1={levelToY(curve.baseline)}
+          y1={baselineY}
           x2={width - PADDING_X}
-          y2={levelToY(curve.baseline)}
+          y2={baselineY}
           stroke={colors.border}
           strokeWidth={1}
           strokeDasharray="4,4"
         />
-        <SvgText x={baselineLabelX} y={levelToY(curve.baseline) - 4} fontSize={10} fill={colors.textTertiary} textAnchor={baselineLabelAnchor}>
+        <SvgText x={baselineLabelX} y={baselineY - 4} fontSize={10} fill={colors.textTertiary} textAnchor={baselineLabelAnchor}>
           basislijn
         </SvgText>
         {segments.map((segment, index) => (

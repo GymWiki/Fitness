@@ -30,8 +30,50 @@ function estimate(overrides: Partial<RecoveryEstimate>): RecoveryEstimate {
 }
 
 describe('generateRecoveryCurve', () => {
-  it('shows a clear dip with "now" near the trough for a muscle group just trained', () => {
-    const source = estimateRecoveryState('Borst', session({ performedAt: hoursAgo(2) }), {}, REFERENCE);
+  it('starts exactly on baseline right at the session (hour 0)', () => {
+    const curve = generateRecoveryCurve('Borst', estimate({ status: 'recovering', hoursSinceSession: 0, windowStartHours: 40, windowEndHours: 72 }));
+    const firstPoint = curve.points[0]!;
+    expect(firstPoint.hoursFromSession).toBe(0);
+    expect(firstPoint.level).toBe(curve.baseline);
+  });
+
+  it('dips below baseline, bottoms out, and returns to baseline by windowStartHours (phase 1+2)', () => {
+    const curve = generateRecoveryCurve('Borst', estimate({ status: 'recovering', windowStartHours: 40, windowEndHours: 72 }));
+    const phase12Points = curve.points.filter((point) => point.hoursFromSession <= curve.windowStartHours);
+    const minLevel = Math.min(...phase12Points.map((point) => point.level));
+    expect(minLevel).toBeLessThan(curve.baseline);
+    // Back on baseline exactly at windowStartHours (the recrossing point).
+    const crossingPoint = curve.points.find((point) => point.hoursFromSession === curve.windowStartHours)!;
+    expect(crossingPoint.level).toBe(curve.baseline);
+  });
+
+  it('rises above baseline through a peak, then decays back to baseline by decayEndHours (phase 3+4)', () => {
+    const curve = generateRecoveryCurve('Borst', estimate({ status: 'ready', windowStartHours: 40, windowEndHours: 72 }));
+    const peakPoint = curve.points.find((point) => point.hoursFromSession === curve.peakHours)!;
+    expect(peakPoint.level).toBeGreaterThan(curve.baseline);
+    const decayEndPoint = curve.points.find((point) => point.hoursFromSession === curve.decayEndHours)!;
+    expect(decayEndPoint.level).toBe(curve.baseline);
+  });
+
+  it('makes dip depth and peak height approximately equal', () => {
+    const curve = generateRecoveryCurve('Borst', estimate({ status: 'ready', windowStartHours: 40, windowEndHours: 72 }));
+    const phase12Points = curve.points.filter((point) => point.hoursFromSession <= curve.windowStartHours);
+    const dipDepth = curve.baseline - Math.min(...phase12Points.map((point) => point.level));
+    const peakHeight = Math.max(...curve.points.map((point) => point.level)) - curve.baseline;
+    expect(Math.abs(dipDepth - peakHeight)).toBeLessThan(0.01);
+  });
+
+  it('gives phase 3+4 (supercompensation + decay) roughly the same duration as phase 1+2 (training + recovery)', () => {
+    const curve = generateRecoveryCurve('Borst', estimate({ status: 'ready', windowStartHours: 40, windowEndHours: 72 }));
+    const phase12Duration = curve.windowStartHours;
+    const phase34Duration = curve.decayEndHours - curve.windowStartHours;
+    expect(phase34Duration).toBe(phase12Duration);
+  });
+
+  it('shows "now" near the trough for a muscle group just trained', () => {
+    // Medium baseline window ~[40, 72]h at a neutral session -> the illustrative
+    // trough sits at windowStartHours * 0.5 = 20h, still well inside 'recovering'.
+    const source = estimateRecoveryState('Borst', session({ performedAt: hoursAgo(20), averageRIR: 2, setsCompleted: 8 }), {}, REFERENCE);
     expect(source.status).toBe('recovering');
 
     const curve = generateRecoveryCurve('Borst', source);
@@ -41,9 +83,8 @@ describe('generateRecoveryCurve', () => {
 
   it('shows "now" at or near the peak for a muscle group inside its ready window', () => {
     // Medium baseline window ~[40, 72]h at a neutral session -> the illustrative
-    // peak sits at windowStartHours + (windowEndHours - windowStartHours) * 0.4 ≈ 53h,
-    // which is still comfortably inside the 'ready' phase (< windowClosingStartHours ≈ 64h).
-    const source = estimateRecoveryState('Borst', session({ performedAt: hoursAgo(53), averageRIR: 2, setsCompleted: 8 }), {}, REFERENCE);
+    // peak sits at windowStartHours * 1.5 = 60h, still inside 'ready' (< windowClosingStartHours ≈ 64h).
+    const source = estimateRecoveryState('Borst', session({ performedAt: hoursAgo(60), averageRIR: 2, setsCompleted: 8 }), {}, REFERENCE);
     expect(source.status).toBe('ready');
 
     const curve = generateRecoveryCurve('Borst', source);
