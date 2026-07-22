@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
+import { typography } from '@/theme/typography';
 
 interface EmptyStateProps {
   title: string;
@@ -11,8 +11,8 @@ interface EmptyStateProps {
 export function EmptyState({ title, body }: EmptyStateProps) {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.body}>{body}</Text>
+      <Text style={[typography.heading, styles.title]}>{title}</Text>
+      <Text style={[typography.bodySecondary, styles.body]}>{body}</Text>
     </View>
   );
 }
@@ -24,15 +24,9 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   title: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '700',
     textAlign: 'center',
   },
   body: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
     textAlign: 'center',
     maxWidth: 280,
   },

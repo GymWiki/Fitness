@@ -1,7 +1,9 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Card } from '@/components/Card';
+import { EmptyState } from '@/components/EmptyState';
+import { ModalHeader } from '@/components/ModalHeader';
 import { ChevronDownIcon, ChevronUpIcon } from '@/components/icons';
 import { FAQ_CATEGORIES, FAQ_ENTRIES, searchFaqEntries, type FaqCategory, type FaqEntry } from '@/lib/faqContent';
 import { colors } from '@/theme/colors';
@@ -39,7 +41,6 @@ function FaqCard({ entry, isExpanded, onToggle }: { entry: FaqEntry; isExpanded:
 }
 
 export default function FaqScreen() {
-  const router = useRouter();
   const params = useLocalSearchParams<{ openId?: string }>();
 
   const [query, setQuery] = useState('');
@@ -64,16 +65,8 @@ export default function FaqScreen() {
 
   return (
     <View style={styles.container}>
+      <ModalHeader title="Wetenschap" subtitle="Waarom de app werkt zoals hij werkt — met de onderzoeken erachter." />
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()}>
-            <Text style={styles.closeButton}>Sluiten</Text>
-          </Pressable>
-        </View>
-
-        <Text style={styles.title}>Wetenschap</Text>
-        <Text style={styles.subtitle}>Waarom de app werkt zoals hij werkt — met de onderzoeken erachter.</Text>
-
         <Card style={styles.disclaimerCard}>
           <Text style={styles.disclaimerText}>
             Dit is educatieve informatie, geen medisch advies. Individuele resultaten kunnen variëren.
@@ -89,12 +82,17 @@ export default function FaqScreen() {
         />
 
         <View style={styles.categoryRow}>
-          <Pressable style={[styles.categoryChip, selectedCategory === null && styles.categoryChipSelected]} onPress={() => setSelectedCategory(null)}>
+          <Pressable
+            hitSlop={4}
+            style={[styles.categoryChip, selectedCategory === null && styles.categoryChipSelected]}
+            onPress={() => setSelectedCategory(null)}
+          >
             <Text style={[styles.categoryChipText, selectedCategory === null && styles.categoryChipTextSelected]}>Alle</Text>
           </Pressable>
           {FAQ_CATEGORIES.map((category) => (
             <Pressable
               key={category}
+              hitSlop={4}
               style={[styles.categoryChip, selectedCategory === category && styles.categoryChipSelected]}
               onPress={() => setSelectedCategory(selectedCategory === category ? null : category)}
             >
@@ -103,7 +101,9 @@ export default function FaqScreen() {
           ))}
         </View>
 
-        {visibleEntries.length === 0 && <Text style={styles.emptyText}>Geen vragen gevonden voor deze zoekopdracht.</Text>}
+        {visibleEntries.length === 0 && (
+          <EmptyState title="Niets gevonden" body="Probeer een andere zoekterm of kies een andere categorie." />
+        )}
 
         {visibleEntries.map((entry) => (
           <FaqCard key={entry.id} entry={entry} isExpanded={expandedIds.has(entry.id)} onToggle={() => toggle(entry.id)} />
@@ -120,25 +120,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.xxl,
-    paddingTop: 32,
     gap: spacing.sm,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: spacing.sm,
-  },
-  closeButton: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  title: {
-    ...typography.title,
-  },
-  subtitle: {
-    ...typography.bodySecondary,
-    marginBottom: spacing.sm,
   },
   disclaimerCard: {
     backgroundColor: colors.surfaceElevated,
@@ -168,7 +150,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   categoryChip: {
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     borderRadius: radii.pill,
     borderWidth: 1,
@@ -186,12 +168,6 @@ const styles = StyleSheet.create({
   },
   categoryChipTextSelected: {
     color: colors.accent,
-  },
-  emptyText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: spacing.lg,
   },
   faqCard: {
     gap: spacing.xs,

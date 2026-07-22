@@ -12,10 +12,18 @@ import { FlameIcon } from './icons';
 
 const DAY_LABELS = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];
 
+const STATUS_LABELS: Record<WeekStripDay['status'], string> = {
+  done: 'getraind',
+  missed: 'gemist',
+  rest: 'rustdag',
+  planned: 'nog te gaan',
+};
+
 function StripDot({ day }: { day: WeekStripDay }) {
+  const dayLabel = DAY_LABELS[day.date.getDay() === 0 ? 6 : day.date.getDay() - 1];
   return (
-    <View style={styles.dayColumn}>
-      <Text style={styles.dayLabel}>{DAY_LABELS[day.date.getDay() === 0 ? 6 : day.date.getDay() - 1]}</Text>
+    <View style={styles.dayColumn} accessibilityLabel={`${dayLabel}${day.isToday ? ' (vandaag)' : ''}: ${STATUS_LABELS[day.status]}`}>
+      <Text style={styles.dayLabel}>{dayLabel}</Text>
       <View
         style={[
           styles.dot,

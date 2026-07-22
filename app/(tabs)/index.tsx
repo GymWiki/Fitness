@@ -13,6 +13,7 @@ import { useProfile } from '@/lib/profile';
 import { useSyncStatus } from '@/lib/useSyncStatus';
 import { fetchWeekReview, type WeekReview } from '@/lib/weekReview';
 import { colors } from '@/theme/colors';
+import { layout } from '@/theme/layout';
 import { spacing } from '@/theme/spacing';
 import { typography } from '@/theme/typography';
 
@@ -112,7 +113,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.xxl,
-    paddingTop: 48,
+    paddingTop: layout.tabScreenPaddingTop,
     gap: spacing.md,
   },
   header: {

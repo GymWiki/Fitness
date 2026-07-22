@@ -4,6 +4,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Card } from '@/components/Card';
+import { EmptyState } from '@/components/EmptyState';
+import { ModalHeader } from '@/components/ModalHeader';
 import { MuscleRecoveryRing } from '@/components/MuscleRecoveryRing';
 import { RecoveryCurveChart } from '@/components/RecoveryCurveChart';
 import { useAuth } from '@/lib/auth';
@@ -13,7 +15,6 @@ import { STATUS_COLOR, STATUS_LABEL } from '@/lib/recoveryLabels';
 import { colors } from '@/theme/colors';
 import { radii } from '@/theme/radii';
 import { spacing } from '@/theme/spacing';
-import { typography } from '@/theme/typography';
 
 const LEGEND_STATUSES: RecoveryStatus[] = ['recovering', 'window_closing', 'ready', 'window_passed', 'no_data'];
 
@@ -76,12 +77,7 @@ export default function ReadinessScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Readiness</Text>
-        <Pressable onPress={() => router.back()}>
-          <Text style={styles.closeButton}>Sluiten</Text>
-        </Pressable>
-      </View>
+      <ModalHeader title="Readiness" />
 
       {isLoading && (
         <View style={styles.loadingRow}>
@@ -91,7 +87,16 @@ export default function ReadinessScreen() {
 
       {!isLoading && error && <Text style={styles.error}>{error}</Text>}
 
-      {!isLoading && !error && (
+      {!isLoading && !error && sortedMuscleGroups.length === 0 && (
+        <View style={styles.emptyWrap}>
+          <EmptyState
+            title="Nog geen hersteldata"
+            body="Log je eerste training om hier per spiergroep te zien wanneer je klaar bent voor de volgende sessie."
+          />
+        </View>
+      )}
+
+      {!isLoading && !error && sortedMuscleGroups.length > 0 && (
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.grid}>
             {sortedMuscleGroups.map(([muscleGroup, estimate]) => (
@@ -165,24 +170,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: spacing.xxl,
-    paddingBottom: spacing.md,
-  },
-  title: {
-    ...typography.title,
-  },
-  closeButton: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
   loadingRow: {
     marginTop: spacing.xxl,
     alignItems: 'center',
+  },
+  emptyWrap: {
+    paddingHorizontal: spacing.xxl,
   },
   error: {
     color: colors.danger,

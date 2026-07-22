@@ -21,6 +21,7 @@ import {
   type SchemaProgram,
 } from '@/lib/schemaEditor';
 import { colors } from '@/theme/colors';
+import { layout } from '@/theme/layout';
 import { radii } from '@/theme/radii';
 import { spacing } from '@/theme/spacing';
 import { typography } from '@/theme/typography';
@@ -118,10 +119,10 @@ function ExerciseRow({
           </Text>
         </View>
         <View style={styles.reorderColumn}>
-          <Pressable disabled={isFirst} onPress={() => onReorder('up')} style={styles.iconButton}>
+          <Pressable disabled={isFirst} onPress={() => onReorder('up')} style={styles.iconButton} hitSlop={10}>
             <ChevronUpIcon size={18} color={isFirst ? colors.textTertiary : colors.textSecondary} />
           </Pressable>
-          <Pressable disabled={isLast} onPress={() => onReorder('down')} style={styles.iconButton}>
+          <Pressable disabled={isLast} onPress={() => onReorder('down')} style={styles.iconButton} hitSlop={10}>
             <ChevronDownIcon size={18} color={isLast ? colors.textTertiary : colors.textSecondary} />
           </Pressable>
         </View>
@@ -220,7 +221,7 @@ function DayCard({
           </Text>
         </Pressable>
         {canRemove && (
-          <Pressable style={styles.iconButton} onPress={confirmRemove}>
+          <Pressable style={styles.iconButton} onPress={confirmRemove} hitSlop={10}>
             <TrashIcon size={18} color={colors.danger} />
           </Pressable>
         )}
@@ -334,7 +335,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.xxl,
-    paddingTop: 48,
+    paddingTop: layout.tabScreenPaddingTop,
     gap: spacing.md,
   },
   headerRow: {
@@ -446,8 +447,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   stepperButton: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
     borderRadius: radii.sm,
     borderWidth: 1,
     borderColor: colors.border,

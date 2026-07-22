@@ -1181,6 +1181,124 @@ actief is: via Playwright bevestigd dat de `<style>`-regel na het laden in
 `"contain"` teruggeeft (was `"auto"`), zonder consolefouten en zonder
 visuele regressie op het (uitgeteste) inlogscherm.
 
+**UI/UX-expertpas over de hele app.** Een pure polish-pass — geen wijziging
+aan trainingslogica, voedingsberekeningen, databaseschema of welke schermen
+er bestaan, uitsluitend hoe alles eruitziet en aanvoelt. Uitgevoerd in de
+volgorde audit → design-tokens verscherpen → consistent toepassen →
+microcopy → toegankelijkheid → zelfkritiek.
+
+*Audit (kort).* Belangrijkste bevindingen: 9 modal-schermen (week-review,
+adjustment-history, exercise-history, switch-goal, faq, food-search,
+readiness, e.a.) hadden elk een handmatig nagebouwde "titel + Sluiten"-header
+met net iets andere paddings/groottes; sommige tap-targets waren kleiner dan
+44px (stepper-knoppen in het schema-scherm op 32×32, losse tekstlinks zonder
+`hitSlop`); de dagselector-knop had twee verschillende groottes in onboarding
+(52×52) versus profiel (44×44) voor hetzelfde concept; een aantal schermen
+met data (readiness, voedingstrend, aanpassingsgeschiedenis, historie) misten
+een echte lege-staat en toonden ofwel niets ofwel kale tekst; `colors.progressMuted`
+stond gedefinieerd maar werd nergens gebruikt. Geen kleuren droegen dubbele
+betekenis: het hersteldrempel-rood/oranje/groen (`recoveryColor.ts`) en de
+voedingsbalk-kleur (`colors.progress`, een aparte neutrale blauwtint) waren al
+strikt gescheiden van elkaar en van de algemene `accent`/`danger` — bewust
+ongemoeid gelaten, inclusief de trainingsadvies-badges (verhogen/verlagen
+gewicht) die `accent`/`danger` hergebruiken als een eigen, ander stoplicht-
+patroon.
+
+*Eén centraal tokensysteem, aangescherpt in plaats van opnieuw opgebouwd.*
+`src/theme/typography.ts` kreeg drie ontbrekende presets (`bodyStrong`,
+`captionStrong`, `micro`) naast de zeven die al bestonden, zodat "vetgedrukte
+body-tekst" en "kleine bijschriften" niet langer per scherm een eigen
+`fontSize`/`fontWeight`-combinatie kregen. Nieuw `src/theme/layout.ts` legt
+schermchrome-constantes vast die eerder overal als losse letterlijke waarden
+rondzwierven: `tabScreenPaddingTop` (was overal `paddingTop: 48` los
+getypt), `modalHeaderPaddingTop`, en `minTapTarget` (44). Kleuren/spacing/
+radii-schaal ongewijzigd — die stonden al goed vanuit een eerdere sessie.
+
+*Eén hergebruikte `ModalHeader` in plaats van negen losse implementaties.*
+Nieuwe `src/components/ModalHeader.tsx` (titel + "Sluiten"-link met
+comfortabele `hitSlop`, optionele subtitel, optionele `right`-slot voor
+extra acties) vervangt de handgebouwde header in 7 van de 9 modal-schermen
+(`week-review`, `adjustment-history`, `history/[dayExerciseId]`,
+`switch-goal`, `faq`, `food-search`, `readiness`). De overige 2
+(`workout/[dayId]`, `food-scan`) hebben bewust géén titelrij — hun
+headerrij bestaat uit een sluitknop plus statusbadge/geen titel — en zijn
+dus niet in `ModalHeader` geforceerd; daar is alleen de sluitknop zelf
+naar `layout.minTapTarget` + `hitSlop` gebracht. Diezelfde schermen kregen
+ook doorgaans hun kaarten/lege staten/knoppen omgezet naar de bestaande
+gedeelde `Card`/`EmptyState`/`Button`-componenten in plaats van losse
+`View`/`Pressable`/`Text`-styling.
+
+*Tap-targets.* Stepper-knoppen in het schema-scherm van 32×32 naar 44×44;
+de dagselector-knop in profiel van 44×44 naar 52×52 (nu gelijk aan
+onboarding, zelfde concept, was eerder toevallig twee groottes); `hitSlop`
+toegevoegd aan een reeks losse tekstlinks en icoon-knoppen die eerder geen
+enkele vergroting hadden (o.a. "Bekijk alles" op Progressie, FAQ-categorie-
+chips, reorder/verwijder-iconen in het schema, sluitknoppen in
+`workout/[dayId]` en `food-scan`).
+
+*Lege staten.* Nieuwe `EmptyState`-toepassingen op readiness (had er eerder
+géén), voedingstrend, aanpassingsgeschiedenis, oefeninghistorie,
+metingen-lijst in profiel en het "nog niets gelogd"-blok in Voeding — elk
+met uitnodigende copy in plaats van kale "geen data"-tekst (bv. "Nog geen
+hersteldata — Log je eerste training om hier per spiergroep te zien wanneer
+je klaar bent voor de volgende sessie" in plaats van niets).
+
+*Microcopy.* Bij controle bleek de bestaande copy al grotendeels consistent
+(dit was eerdere-sessiewerk): "Loggen"/"Gelogd" wordt overal voor het
+loggen van sets/sessies/maaltijden gebruikt (nooit "Opgeslagen" of
+"Toegevoegd" door elkaar), foutmeldingen volgen overal hetzelfde
+"Kon [je] X niet laden."/"{Werkwoord} mislukt"-patroon, en nergens kwam
+verontschuldigende taal ("Sorry", "helaas") voor. Enige aanpassing: het
+gelogde-set-regeltje in `workout/[dayId]` kreeg een expliciet "Gelogd —"-
+voorvoegsel in plaats van kaal "Set N: ...", om bevestiging en historie
+visueel te onderscheiden.
+
+*Toegankelijkheid.* `colors.textTertiary` (bijschriften, tijdstempels) gaf
+een contrastratio van 3.75:1 tegen `colors.surface` — onder de WCAG AA-eis
+van 4.5:1 voor normale tekstgrootte. Aangepast van `#6B7684` naar `#808D9E`
+(zelfde grijsblauwe karakter, alleen lichter): nu 5.1-5.7:1 tegen
+`background`/`surface`/`surfaceElevated`. Eén token, dus de fix geldt overal
+tegelijk. Nieuwe `src/lib/useReducedMotion.ts` (wrapper om
+`AccessibilityInfo.isReduceMotionEnabled`/`reduceMotionChanged`, werkt ook
+op web via de `prefers-reduced-motion`-media query) is gekoppeld aan de
+enige twee animaties in de app: de gestaggerde vul-animatie van `StatBars.tsx`
+en de fade-transitie van `RecoveryCurveChart.tsx` — bij "reduce motion" aan
+verschijnen beide direct in eindstaat. De weekstrip-stippen op "Vandaag"
+(`WeekOverview.tsx`) droegen status (getraind/gemist/rustdag) alleen via
+kleur en vorm; kregen een `accessibilityLabel` per dag zodat een
+schermlezer dezelfde informatie krijgt. Overige kleur-als-signaal-plekken
+(hersteldrempel-ringen, voedingsbalken, trainingsadvies-badges) hadden al
+overal een tekstlabel naast de kleur.
+
+*Snelle paden.* Gecontroleerd, niet gewijzigd (navigatiestructuur zit buiten
+de scope): "Vandaag" → workout loggen is 1 tik (`TrainingTodayCard` opent
+`/workout/[dayId]` direct), "Vandaag" → maaltijd loggen is 2 tikken (naar
+Voeding-tab, dan Scannen/Zoeken) — beide binnen de gestelde 2-tikken-eis.
+
+*Zelfkritiek + verificatie.* Tijdelijke `app/_uiux-preview.tsx`
+("kitchen sink" met alle tokens/componenten: typografieschaal, alle
+knopvarianten, kaartvarianten, lege staat, voedingsbalken, hersteldrempel-
+ringen, stat-tegels/-balken), geregistreerd in `app/_layout.tsx`, via
+`expo export --platform web` + Playwright gescreenshot, geen consolefouten,
+daarna volledig teruggedraaid (zelfde tijdelijke-previewroute-aanpak als
+eerdere verificaties in dit document). Geen overbodige decoratie
+aangetroffen; alle gecontroleerde schermen volgen het tokensysteem.
+
+*Bewust ongemoeid gelaten.* Het herstelstatus-kleursysteem
+(`recoveryColor.ts`) is op expliciet verzoek niet aangeraakt, ook niet waar
+"herstellend" hetzelfde rood deelt als foutmeldingen/destructieve acties —
+dat is een eerder doelbewust ontworpen en getest systeem. Een aantal
+letterlijke, niet-tokenized font-groottes in kleinere componenten
+(`SelectableCard`, `StatTile`, `WeekOverview`, curve-titels in
+`readiness.tsx`) is bewust laten staan waar geen exacte preset paste en de
+schermen onderling al consistent waren — voorkeur voor consistentie tussen
+schermen boven het elimineren van elk laatste los getal.
+
+*Tests/typecheck.* `npx tsc --noEmit` clean, alle 235 tests slagen (54
+progression-engine + 25 adaptation-planner + 25 nutrition-engine + 32
+program-generator + 99 root `src/lib`) — geen regressie in bestaande
+functionaliteit, zoals vereist door de scope-afbakening van deze pass.
+
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
   platform-onafhankelijk TypeScript-package (geen React Native-, Expo- of
   Supabase-imports). De Expo-app hangt eraan via `@fitness/progression-engine`.

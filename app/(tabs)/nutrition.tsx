@@ -13,6 +13,7 @@ import { fetchMeasurementHistory } from '@/lib/measurements';
 import { computeUserNutritionTargets } from '@/lib/nutritionTargets';
 import { useProfile } from '@/lib/profile';
 import { colors } from '@/theme/colors';
+import { layout } from '@/theme/layout';
 import { radii } from '@/theme/radii';
 import { spacing } from '@/theme/spacing';
 import { typography } from '@/theme/typography';
@@ -224,7 +225,7 @@ export default function NutritionScreen() {
                       {Math.round(entry.quantityGrams)}g · {entry.calories} kcal · {entry.proteinGrams}g eiwit
                     </Text>
                   </View>
-                  <Pressable onPress={() => handleDelete(entry.id)} hitSlop={8}>
+                  <Pressable onPress={() => handleDelete(entry.id)} hitSlop={12}>
                     <TrashIcon size={18} color={colors.textTertiary} />
                   </Pressable>
                 </Card>
@@ -244,7 +245,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.xxl,
-    paddingTop: 48,
+    paddingTop: layout.tabScreenPaddingTop,
     gap: spacing.sm,
   },
   title: {

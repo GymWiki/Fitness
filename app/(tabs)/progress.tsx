@@ -18,6 +18,7 @@ import { useProfile } from '@/lib/profile';
 import { fetchActiveProgram, type ActiveProgram } from '@/lib/programs';
 import { fetchLongestStreak, fetchMonthlyWorkoutCount, fetchWeeklyVolume } from '@/lib/progressStats';
 import { colors } from '@/theme/colors';
+import { layout } from '@/theme/layout';
 import { spacing } from '@/theme/spacing';
 import { typography } from '@/theme/typography';
 
@@ -142,7 +143,7 @@ export default function ProgressScreen() {
 
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>Aanpassingsgeschiedenis</Text>
-              <Pressable onPress={() => router.push('/adjustment-history')}>
+              <Pressable onPress={() => router.push('/adjustment-history')} hitSlop={8}>
                 <Text style={styles.sectionLink}>Bekijk alles</Text>
               </Pressable>
             </View>
@@ -177,7 +178,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.xxl,
-    paddingTop: 48,
+    paddingTop: layout.tabScreenPaddingTop,
     gap: spacing.sm,
   },
   title: {

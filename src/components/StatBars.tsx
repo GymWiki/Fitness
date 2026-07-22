@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { STAT_LABELS, STAT_MAX, type PhysiqueStats } from '@/lib/physiqueStats';
+import { useReducedMotion } from '@/lib/useReducedMotion';
 import { colors } from '@/theme/colors';
 import { radii } from '@/theme/radii';
 import { spacing } from '@/theme/spacing';
@@ -10,13 +11,14 @@ const STAT_KEYS: Array<keyof PhysiqueStats> = ['kracht', 'spiermassa', 'uithoudi
 function StatBar({ label, value, accent, delay }: { label: string; value: number; accent: boolean; delay: number }) {
   const progress = useRef(new Animated.Value(0)).current;
   const percent = (value / STAT_MAX) * 100;
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     progress.setValue(0);
-    Animated.timing(progress, { toValue: 1, duration: 500, delay, useNativeDriver: false }).start();
+    Animated.timing(progress, { toValue: 1, duration: reducedMotion ? 0 : 500, delay: reducedMotion ? 0 : delay, useNativeDriver: false }).start();
     // Re-fills whenever this card becomes the selected one, as a small "locked in" cue.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accent]);
+  }, [accent, reducedMotion]);
 
   const width = progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', `${percent}%`] });
 

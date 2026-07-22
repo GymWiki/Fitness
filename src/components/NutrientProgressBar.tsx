@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
   track: {
     height: 8,
     borderRadius: radii.pill,
-    backgroundColor: colors.border,
+    backgroundColor: colors.progressMuted,
     overflow: 'hidden',
   },
   trackLarge: {

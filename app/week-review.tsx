@@ -2,10 +2,16 @@ import type { Adjustment } from '@fitness/adaptation-planner';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
+import { EmptyState } from '@/components/EmptyState';
+import { ModalHeader } from '@/components/ModalHeader';
 import { adjustmentTitle } from '@/lib/adjustmentLabels';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/theme/colors';
 import { applyWeekReview, fetchWeekReview, type WeekReview } from '@/lib/weekReview';
+import { spacing } from '@/theme/spacing';
+import { typography } from '@/theme/typography';
 
 function titleFor(adjustment: Adjustment, review: WeekReview): string {
   const exerciseName = adjustment.dayExerciseId ? review.exerciseNamesById.get(adjustment.dayExerciseId) : undefined;
@@ -68,9 +74,9 @@ export default function WeekReviewScreen() {
     return (
       <View style={styles.centered}>
         <Text style={styles.error}>{error}</Text>
-        <Pressable style={styles.secondaryButton} onPress={() => router.back()}>
-          <Text style={styles.secondaryButtonText}>Terug</Text>
-        </Pressable>
+        <Button variant="secondary" onPress={() => router.back()}>
+          Terug
+        </Button>
       </View>
     );
   }
@@ -78,56 +84,47 @@ export default function WeekReviewScreen() {
   if (!review) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.body}>Nog geen week klaar om te bekijken.</Text>
-        <Pressable style={styles.secondaryButton} onPress={() => router.back()}>
-          <Text style={styles.secondaryButtonText}>Terug</Text>
-        </Pressable>
+        <EmptyState title="Nog geen week klaar" body="Er staat momenteel geen week-overzicht klaar om te bekijken." />
+        <Button variant="secondary" onPress={() => router.back()}>
+          Terug
+        </Button>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()}>
-            <Text style={styles.closeButton}>Sluiten</Text>
+      <ModalHeader
+        title={`Week ${review.weekNumber} voltooid`}
+        right={
+          <Pressable onPress={() => router.push('/adjustment-history')} hitSlop={8} style={styles.historyLinkWrap}>
+            <Text style={styles.historyLink}>Bekijk eerdere aanpassingen</Text>
           </Pressable>
-        </View>
-
-        <Text style={styles.title}>Week {review.weekNumber} voltooid</Text>
-        <Pressable onPress={() => router.push('/adjustment-history')}>
-          <Text style={styles.historyLink}>Bekijk eerdere aanpassingen</Text>
-        </Pressable>
-
+        }
+      />
+      <ScrollView contentContainerStyle={styles.content}>
         {review.adjustments.length === 0 ? (
-          <Text style={styles.body}>Geen aanpassingen nodig deze week — alles binnen het schema. Ga zo door!</Text>
+          <EmptyState title="Geen aanpassingen nodig" body="Alles binnen het schema deze week — ga zo door!" />
         ) : (
           <>
-            <Text style={styles.subtitle}>
+            <Text style={[typography.bodySecondary, styles.subtitle]}>
               Vink aan wat je wilt toepassen voor komende week. Alles staat standaard aan.
             </Text>
             {review.adjustments.map((adjustment, index) => {
               const isSelected = selectedIndexes.has(index);
               return (
-                <Pressable
-                  key={index}
-                  style={[styles.card, isSelected && styles.cardSelected]}
-                  onPress={() => toggle(index)}
-                >
+                <Card key={index} style={[styles.card, isSelected && styles.cardSelected]} onPress={() => toggle(index)}>
                   <View style={styles.cardHeaderRow}>
-                    <Text style={styles.cardTitle}>{titleFor(adjustment, review)}</Text>
-                    <Text style={[styles.cardCheck, isSelected && styles.cardCheckSelected]}>
-                      {isSelected ? '✓' : ''}
-                    </Text>
+                    <Text style={[typography.heading, styles.cardTitle]}>{titleFor(adjustment, review)}</Text>
+                    <Text style={[styles.cardCheck, isSelected && styles.cardCheckSelected]}>{isSelected ? '✓' : ''}</Text>
                   </View>
                   {adjustment.previousValue !== undefined && adjustment.newValue !== undefined && (
                     <Text style={styles.cardValues}>
                       {adjustment.previousValue} → {adjustment.newValue}
                     </Text>
                   )}
-                  <Text style={styles.cardReason}>{adjustment.explanation}</Text>
-                </Pressable>
+                  <Text style={[typography.bodySecondary, styles.cardReason]}>{adjustment.explanation}</Text>
+                </Card>
               );
             })}
           </>
@@ -135,13 +132,9 @@ export default function WeekReviewScreen() {
       </ScrollView>
 
       <View style={styles.nav}>
-        <Pressable style={styles.primaryButton} onPress={confirm} disabled={isSubmitting}>
-          {isSubmitting ? (
-            <ActivityIndicator color={colors.background} />
-          ) : (
-            <Text style={styles.primaryButtonText}>Bevestigen</Text>
-          )}
-        </Pressable>
+        <Button onPress={confirm} loading={isSubmitting}>
+          Bevestigen
+        </Button>
       </View>
     </View>
   );
@@ -157,45 +150,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.background,
-    gap: 16,
-    padding: 24,
+    gap: spacing.lg,
+    padding: spacing.xxl,
   },
   content: {
-    padding: 24,
-    paddingTop: 32,
-    gap: 12,
+    padding: spacing.xxl,
+    gap: spacing.md,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: 8,
-  },
-  closeButton: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 26,
-    fontWeight: '700',
-  },
-  subtitle: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 8,
+  historyLinkWrap: {
+    alignSelf: 'flex-start',
   },
   historyLink: {
     color: colors.accent,
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
   },
-  body: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 21,
+  subtitle: {
+    marginBottom: spacing.sm,
   },
   error: {
     color: colors.danger,
@@ -203,11 +174,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
+    gap: spacing.xs,
   },
   cardSelected: {
     borderColor: colors.accent,
@@ -218,16 +185,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cardTitle: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '700',
     flexShrink: 1,
   },
   cardCheck: {
     color: 'transparent',
     fontSize: 18,
     fontWeight: '700',
-    marginLeft: 12,
+    marginLeft: spacing.md,
   },
   cardCheckSelected: {
     color: colors.accent,
@@ -236,37 +200,14 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 15,
     fontWeight: '700',
-    marginTop: 6,
   },
   cardReason: {
-    color: colors.textSecondary,
     fontSize: 14,
     lineHeight: 20,
-    marginTop: 6,
   },
   nav: {
-    padding: 24,
+    padding: spacing.xxl,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-  },
-  secondaryButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-  },
-  secondaryButtonText: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  primaryButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: colors.background,
-    fontSize: 16,
-    fontWeight: '700',
   },
 });

@@ -1,8 +1,11 @@
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
 import { FoodLogForm, type FoodLogFormDraft } from '@/components/FoodLogForm';
+import { ModalHeader } from '@/components/ModalHeader';
 import { searchProductsByName, type OpenFoodFactsProduct } from '@/lib/openFoodFacts';
 import { canSearchNow } from '@/lib/searchThrottle';
 import { useSyncStatus } from '@/lib/useSyncStatus';
@@ -64,21 +67,18 @@ export default function FoodSearchScreen() {
       <View style={styles.centered}>
         <Text style={styles.title}>Geen verbinding</Text>
         <Text style={styles.body}>Zoeken naar producten vereist een internetverbinding. Probeer het later opnieuw.</Text>
-        <Pressable onPress={() => router.back()}>
-          <Text style={styles.closeLink}>Terug</Text>
-        </Pressable>
+        <View style={styles.buttonWrap}>
+          <Button variant="secondary" onPress={() => router.back()}>
+            Terug
+          </Button>
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Zoeken</Text>
-        <Pressable onPress={() => router.back()}>
-          <Text style={styles.closeButton}>Sluiten</Text>
-        </Pressable>
-      </View>
+      <ModalHeader title="Zoeken" />
 
       {draft ? (
         <ScrollView contentContainerStyle={styles.content}>
@@ -121,13 +121,13 @@ export default function FoodSearchScreen() {
               </Pressable>
             )}
             {results.map((product) => (
-              <Pressable key={product.barcode} style={styles.resultRow} onPress={() => setDraft(draftFromProduct(product))}>
-                <Text style={styles.resultName}>{product.name}</Text>
-                <Text style={styles.resultDetail}>
+              <Card key={product.barcode} onPress={() => setDraft(draftFromProduct(product))}>
+                <Text style={typography.bodyStrong}>{product.name}</Text>
+                <Text style={[typography.caption, styles.resultDetail]}>
                   {product.brand ? `${product.brand} · ` : ''}
                   {product.caloriesPer100g !== null ? `${Math.round(product.caloriesPer100g)} kcal/100g` : 'Voedingswaarden onbekend'}
                 </Text>
-              </Pressable>
+              </Card>
             ))}
           </ScrollView>
         </>
@@ -149,25 +149,12 @@ const styles = StyleSheet.create({
     padding: spacing.xxl,
     gap: spacing.md,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: spacing.xxl,
-    paddingBottom: spacing.md,
-  },
   title: {
     ...typography.title,
   },
-  closeButton: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  closeLink: {
-    color: colors.accent,
-    fontSize: 14,
-    fontWeight: '600',
+  buttonWrap: {
+    marginTop: spacing.md,
+    minWidth: 160,
   },
   body: {
     ...typography.bodySecondary,
@@ -177,6 +164,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     paddingHorizontal: spacing.xxl,
+    marginTop: spacing.md,
     marginBottom: spacing.md,
   },
   input: {
@@ -196,6 +184,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 44,
   },
   searchButtonText: {
     color: colors.background,
@@ -224,21 +213,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  resultRow: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radii.md,
-    padding: spacing.lg,
-  },
-  resultName: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
   resultDetail: {
-    color: colors.textSecondary,
-    fontSize: 13,
     marginTop: 2,
   },
 });

@@ -14,6 +14,9 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
+import { EmptyState } from '@/components/EmptyState';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 import { useAuth } from '@/lib/auth';
 import { formatShortDate } from '@/lib/dates';
@@ -24,6 +27,9 @@ import { useProfile } from '@/lib/profile';
 import { fetchProgramDayWithExercises, type ProgramDayForWorkout, type WorkoutExercise } from '@/lib/programs';
 import { useSyncStatus } from '@/lib/useSyncStatus';
 import { colors } from '@/theme/colors';
+import { layout } from '@/theme/layout';
+import { spacing } from '@/theme/spacing';
+import { typography } from '@/theme/typography';
 
 const RIR_OPTIONS = [0, 1, 2, 3, 4];
 
@@ -35,7 +41,7 @@ const STRENGTH_ADVICE_LABELS: Record<StrengthAdvice['action'], string> = {
 
 const STRENGTH_ADVICE_BADGE_COLORS: Record<StrengthAdvice['action'], { backgroundColor: string; textColor: string }> = {
   increase_weight: { backgroundColor: colors.accent, textColor: colors.background },
-  maintain: { backgroundColor: colors.surface, textColor: colors.textPrimary },
+  maintain: { backgroundColor: colors.surfaceElevated, textColor: colors.textPrimary },
   decrease_weight: { backgroundColor: colors.danger, textColor: colors.background },
 };
 
@@ -103,9 +109,9 @@ export default function WorkoutScreen() {
     return (
       <View style={styles.centered}>
         <Text style={styles.error}>{loadError ?? 'Workout niet gevonden.'}</Text>
-        <Pressable style={styles.secondaryButton} onPress={() => router.back()}>
-          <Text style={styles.secondaryButtonText}>Terug</Text>
-        </Pressable>
+        <Button variant="secondary" onPress={() => router.back()}>
+          Terug
+        </Button>
       </View>
     );
   }
@@ -113,10 +119,10 @@ export default function WorkoutScreen() {
   if (!exercise) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.body}>Geen oefeningen in deze dag.</Text>
-        <Pressable style={styles.secondaryButton} onPress={() => router.back()}>
-          <Text style={styles.secondaryButtonText}>Terug</Text>
-        </Pressable>
+        <EmptyState title="Geen oefeningen" body="Deze trainingsdag heeft nog geen oefeningen om te loggen." />
+        <Button variant="secondary" onPress={() => router.back()}>
+          Terug
+        </Button>
       </View>
     );
   }
@@ -128,20 +134,22 @@ export default function WorkoutScreen() {
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()}>
+          <Pressable onPress={() => router.back()} hitSlop={12} style={styles.closeButtonWrap}>
             <Text style={styles.closeButton}>Sluiten</Text>
           </Pressable>
           <SyncStatusBadge status={syncStatus} />
         </View>
 
-        <Text style={styles.dayName}>{day.name}</Text>
+        <Text style={typography.label}>{day.name}</Text>
         <Text style={styles.progress}>
           Oefening {exerciseIndex + 1} van {day.exercises.length}
         </Text>
 
         <View style={styles.exerciseHeaderRow}>
-          <Text style={styles.exerciseName}>{exercise.exerciseName}</Text>
+          <Text style={[typography.title, styles.exerciseName]}>{exercise.exerciseName}</Text>
           <Pressable
+            hitSlop={8}
+            style={styles.historyLinkWrap}
             onPress={() =>
               router.push({
                 pathname: '/history/[dayExerciseId]',
@@ -161,22 +169,14 @@ export default function WorkoutScreen() {
       </ScrollView>
 
       <View style={styles.nav}>
-        <Pressable
-          style={[styles.secondaryButton, exerciseIndex === 0 && styles.navButtonDisabled]}
-          disabled={exerciseIndex === 0}
-          onPress={() => setExerciseIndex(exerciseIndex - 1)}
-        >
-          <Text style={styles.secondaryButtonText}>Vorige</Text>
-        </Pressable>
+        <Button variant="ghost" disabled={exerciseIndex === 0} onPress={() => setExerciseIndex(exerciseIndex - 1)}>
+          Vorige
+        </Button>
 
         {isLastExercise ? (
-          <Pressable style={styles.primaryButton} onPress={() => router.back()}>
-            <Text style={styles.primaryButtonText}>Workout voltooien</Text>
-          </Pressable>
+          <Button onPress={() => router.back()}>Workout voltooien</Button>
         ) : (
-          <Pressable style={styles.primaryButton} onPress={() => setExerciseIndex(exerciseIndex + 1)}>
-            <Text style={styles.primaryButtonText}>Volgende oefening</Text>
-          </Pressable>
+          <Button onPress={() => setExerciseIndex(exerciseIndex + 1)}>Volgende oefening</Button>
         )}
       </View>
     </View>
@@ -250,7 +250,7 @@ function StrengthLogger({ exercise, workoutId }: { exercise: WorkoutExercise; wo
 
   return (
     <>
-      <Text style={styles.target}>
+      <Text style={[typography.bodySecondary, styles.target]}>
         Doel: {exercise.sets}× {exercise.repRangeMin}-{exercise.repRangeMax} reps, RIR {exercise.targetRIR}
       </Text>
 
@@ -273,15 +273,15 @@ function StrengthLogger({ exercise, workoutId }: { exercise: WorkoutExercise; wo
         ))}
       </View>
 
-      <Pressable style={styles.logButton} onPress={logSet}>
-        <Text style={styles.logButtonText}>Set {loggedSets.length + 1} loggen</Text>
-      </Pressable>
+      <View style={styles.logButtonWrap}>
+        <Button onPress={logSet}>{`Set ${loggedSets.length + 1} loggen`}</Button>
+      </View>
 
       {loggedSets.length > 0 && (
         <View style={styles.loggedList}>
           {loggedSets.map((set) => (
             <Text key={set.id} style={styles.loggedLine}>
-              Set {set.setOrder}: {set.weightKg} kg × {set.reps} reps (RIR {set.rir})
+              Gelogd — Set {set.setOrder}: {set.weightKg} kg × {set.reps} reps (RIR {set.rir})
             </Text>
           ))}
         </View>
@@ -305,30 +305,30 @@ function StrengthAdviceCard({
 
   if (isLoading) {
     return (
-      <View style={styles.adviceCard}>
+      <Card style={styles.adviceCard}>
         <ActivityIndicator color={colors.accent} />
-      </View>
+      </Card>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.adviceCard}>
+      <Card style={styles.adviceCard}>
         <Text style={styles.error}>{error}</Text>
-      </View>
+      </Card>
     );
   }
 
   if (!lastSession || !advice) {
     return (
-      <View style={styles.adviceCard}>
-        <Text style={styles.body}>Nog geen historie voor deze oefening. Kies zelf een startgewicht voor de eerste set.</Text>
-      </View>
+      <Card style={styles.adviceCard}>
+        <Text style={typography.bodySecondary}>Nog geen historie voor deze oefening. Kies zelf een startgewicht voor de eerste set.</Text>
+      </Card>
     );
   }
 
   return (
-    <View style={styles.adviceCard}>
+    <Card style={styles.adviceCard}>
       <View style={styles.adviceHeaderRow}>
         <Text
           style={[
@@ -343,9 +343,9 @@ function StrengthAdviceCard({
         </Text>
         <Text style={styles.adviceWeight}>{advice.weightKg} kg</Text>
       </View>
-      <Text style={styles.adviceExplanation}>{advice.explanation}</Text>
+      <Text style={typography.bodySecondary}>{advice.explanation}</Text>
 
-      <Pressable onPress={() => setIsExpanded((current) => !current)}>
+      <Pressable onPress={() => setIsExpanded((current) => !current)} hitSlop={8} style={styles.whyToggleWrap}>
         <Text style={styles.whyToggle}>{isExpanded ? 'Verberg details' : 'Waarom?'}</Text>
       </Pressable>
       {isExpanded && (
@@ -354,7 +354,7 @@ function StrengthAdviceCard({
           {lastSession.sets.map((set) => `${set.weightKg} kg × ${set.reps} (RIR ${set.rir})`).join(', ')}.
         </Text>
       )}
-    </View>
+    </Card>
   );
 }
 
@@ -430,17 +430,17 @@ function CardioLogger({ exercise, workoutId, goal }: { exercise: WorkoutExercise
 
   if (isHistoryLoading) {
     return (
-      <View style={styles.adviceCard}>
+      <Card style={styles.adviceCard}>
         <ActivityIndicator color={colors.accent} />
-      </View>
+      </Card>
     );
   }
 
   if (historyError) {
     return (
-      <View style={styles.adviceCard}>
+      <Card style={styles.adviceCard}>
         <Text style={styles.error}>{historyError}</Text>
-      </View>
+      </Card>
     );
   }
 
@@ -449,21 +449,21 @@ function CardioLogger({ exercise, workoutId, goal }: { exercise: WorkoutExercise
 
   return (
     <>
-      <View style={styles.adviceCard}>
-        <Text style={styles.adviceCardTitle}>Vandaag: {isZone2 ? 'Zone 2' : 'Interval'}</Text>
-        <Text style={styles.adviceExplanation}>{typeAdvice.explanation}</Text>
-        <Text style={[styles.adviceExplanation, styles.adviceExplanationSpaced]}>{progressionAdvice.explanation}</Text>
+      <Card style={styles.adviceCard}>
+        <Text style={[typography.heading, styles.adviceCardTitle]}>Vandaag: {isZone2 ? 'Zone 2' : 'Interval'}</Text>
+        <Text style={typography.bodySecondary}>{typeAdvice.explanation}</Text>
+        <Text style={[typography.bodySecondary, styles.adviceExplanationSpaced]}>{progressionAdvice.explanation}</Text>
 
-        <Pressable onPress={() => setIsWhyExpanded((current) => !current)}>
+        <Pressable onPress={() => setIsWhyExpanded((current) => !current)} hitSlop={8} style={styles.whyToggleWrap}>
           <Text style={styles.whyToggle}>{isWhyExpanded ? 'Verberg details' : 'Waarom?'}</Text>
         </Pressable>
         {isWhyExpanded && (
           <Text style={styles.whyDetail}>
-            Afgelopen {distribution.windowDays} dagen: {distribution.lowMinutes} min zone 2, {distribution.highMinutes} min interval
-            ({distribution.intensePercent}% intensief).
+            Afgelopen {distribution.windowDays} dagen: {distribution.lowMinutes} min zone 2, {distribution.highMinutes} min interval (
+            {distribution.intensePercent}% intensief).
           </Text>
         )}
-      </View>
+      </Card>
 
       {isLogged ? (
         <View style={styles.loggedList}>
@@ -487,9 +487,9 @@ function CardioLogger({ exercise, workoutId, goal }: { exercise: WorkoutExercise
           <Stepper label="Gem. hartslag (optioneel)" value={avgHeartRate} step={5} min={0} onChange={setAvgHeartRate} />
           <Stepper label="Afstand in km (optioneel)" value={distanceKm} step={0.5} min={0} onChange={setDistanceKm} />
 
-          <Pressable style={styles.logButton} onPress={logSession}>
-            <Text style={styles.logButtonText}>Sessie loggen</Text>
-          </Pressable>
+          <View style={styles.logButtonWrap}>
+            <Button onPress={logSession}>Sessie loggen</Button>
+          </View>
         </>
       )}
     </>
@@ -540,93 +540,74 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.background,
-    gap: 16,
-    padding: 24,
+    gap: spacing.lg,
+    padding: spacing.xxl,
   },
   content: {
-    padding: 24,
-    paddingTop: 32,
-    gap: 8,
+    padding: spacing.xxl,
+    gap: spacing.sm,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
+  },
+  closeButtonWrap: {
+    minHeight: layout.minTapTarget,
+    justifyContent: 'center',
   },
   closeButton: {
     color: colors.textSecondary,
     fontSize: 15,
     fontWeight: '600',
   },
-  dayName: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
   progress: {
     color: colors.textSecondary,
     fontSize: 13,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   exerciseHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    marginTop: 4,
+    marginTop: spacing.xs,
   },
   exerciseName: {
-    color: colors.textPrimary,
-    fontSize: 26,
-    fontWeight: '700',
     flexShrink: 1,
+  },
+  historyLinkWrap: {
+    minHeight: layout.minTapTarget,
+    justifyContent: 'center',
   },
   historyLink: {
     color: colors.accent,
     fontSize: 14,
     fontWeight: '600',
-    paddingBottom: 4,
   },
   target: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    marginBottom: 16,
-  },
-  body: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 21,
+    marginBottom: spacing.lg,
   },
   adviceCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
-    marginBottom: 20,
+    marginTop: spacing.lg,
+    marginBottom: spacing.xxl,
+    gap: spacing.sm,
   },
   adviceCardTitle: {
-    color: colors.textPrimary,
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 8,
+    marginBottom: 0,
   },
   adviceHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
   },
   adviceBadge: {
     fontSize: 12,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
     borderRadius: 8,
     overflow: 'hidden',
   },
@@ -635,25 +616,22 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
   },
-  adviceExplanation: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-  },
   adviceExplanationSpaced: {
-    marginTop: 8,
+    marginTop: 0,
+  },
+  whyToggleWrap: {
+    marginTop: spacing.xs,
+    alignSelf: 'flex-start',
   },
   whyToggle: {
     color: colors.accent,
     fontSize: 13,
     fontWeight: '600',
-    marginTop: 10,
   },
   whyDetail: {
     color: colors.textSecondary,
     fontSize: 13,
     lineHeight: 19,
-    marginTop: 6,
   },
   error: {
     color: colors.danger,
@@ -661,18 +639,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   stepperBlock: {
-    marginBottom: 20,
+    marginBottom: spacing.xxl,
   },
   stepperLabel: {
     color: colors.textSecondary,
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   stepperRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 20,
+    gap: spacing.xl,
   },
   stepperButton: {
     width: 56,
@@ -698,8 +676,8 @@ const styles = StyleSheet.create({
   },
   rirRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 24,
+    gap: spacing.md,
+    marginBottom: spacing.xxl,
   },
   rirButton: {
     width: 48,
@@ -723,20 +701,11 @@ const styles = StyleSheet.create({
   rirButtonTextSelected: {
     color: colors.background,
   },
-  logButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 12,
-    paddingVertical: 18,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  logButtonText: {
-    color: colors.background,
-    fontSize: 17,
-    fontWeight: '700',
+  logButtonWrap: {
+    marginBottom: spacing.lg,
   },
   loggedList: {
-    gap: 4,
+    gap: spacing.xs,
   },
   loggedLine: {
     color: colors.textSecondary,
@@ -746,32 +715,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 24,
+    padding: spacing.xxl,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-  },
-  navButtonDisabled: {
-    opacity: 0.3,
-  },
-  secondaryButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-  },
-  secondaryButtonText: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  primaryButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 28,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: colors.background,
-    fontSize: 16,
-    fontWeight: '700',
   },
 });

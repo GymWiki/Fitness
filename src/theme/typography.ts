@@ -7,7 +7,10 @@ export const typography = {
   title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary } satisfies TextStyle,
   heading: { fontSize: 17, fontWeight: '700', color: colors.textPrimary } satisfies TextStyle,
   body: { fontSize: 15, lineHeight: 21, color: colors.textPrimary } satisfies TextStyle,
+  bodyStrong: { fontSize: 15, fontWeight: '600', color: colors.textPrimary } satisfies TextStyle,
   bodySecondary: { fontSize: 15, lineHeight: 21, color: colors.textSecondary } satisfies TextStyle,
   label: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 } satisfies TextStyle,
   caption: { fontSize: 12, color: colors.textTertiary } satisfies TextStyle,
+  captionStrong: { fontSize: 12, fontWeight: '700', color: colors.textSecondary } satisfies TextStyle,
+  micro: { fontSize: 11, fontWeight: '600', color: colors.textSecondary } satisfies TextStyle,
 } as const;
