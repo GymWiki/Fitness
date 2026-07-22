@@ -125,9 +125,9 @@ export const FAQ_ENTRIES: FaqEntry[] = [
     category: 'Training & progressie',
     vraag: 'Waarom moet ik soms rust nemen of een deload doen?',
     antwoord:
-      'Herstel is niet "verloren tijd" — het is waar de eigenlijke aanpassing plaatsvindt. Zonder voldoende herstel stapelt vermoeidheid zich op en daalt je prestatie geleidelijk (overreaching), wat bij aanhoudende opeenstapeling kan doorschieten naar overtraining. Een geplande, tijdelijke volumevermindering (een deload) elke paar weken laat opgebouwde vermoeidheid wegzakken terwijl de fitheid die je hebt opgebouwd grotendeels behouden blijft — zodat je daarna weer fris en met effect verder kunt.',
+      'Herstel is niet "verloren tijd" — het is waar de eigenlijke aanpassing plaatsvindt. Zonder voldoende herstel stapelt vermoeidheid zich op en daalt je prestatie geleidelijk (overreaching), wat bij aanhoudende opeenstapeling kan doorschieten naar overtraining. Een geplande, tijdelijke volumevermindering (een deload) elke 4 tot 6 weken laat opgebouwde vermoeidheid wegzakken terwijl de fitheid die je hebt opgebouwd grotendeels behouden blijft — zodat je daarna weer fris en met effect verder kunt.',
     watBetekentDitInDeApp:
-      'Dit is waarom de app automatisch deload-weken voorstelt zodra de signalen (bijvoorbeeld herhaald onder je rep-doelen blijven) daarom vragen, in plaats van je schema eindeloos zwaarder te blijven maken.',
+      'Dit is waarom de app automatisch een deload-week voorstelt na gemiddeld 5 weken (binnen die 4-6 wekenrange), en eerder als de signalen (bijvoorbeeld herhaald onder je rep-doelen blijven) daar al vóór die tijd om vragen — in plaats van je schema eindeloos zwaarder te blijven maken.',
     bronnen: [
       {
         titel: 'A Practical Approach to Deloading: Recommendations and Considerations for Strength and Physique Sports',
@@ -163,6 +163,23 @@ export const FAQ_ENTRIES: FaqEntry[] = [
         auteurs: 'Nøst, Aune & van den Tillaar',
         jaar: 2024,
         url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC11679080/',
+      },
+    ],
+  },
+  {
+    id: 'interference-effect',
+    category: 'Training & progressie',
+    vraag: 'Waarom plant de app nooit zware cardio vlak vóór mijn zware beendag?',
+    antwoord:
+      'Intensieve cardio en zware krachttraining kort na elkaar kunnen elkaar tegenwerken (het "interference effect"): de vermoeidheid van de cardio-sessie kan de kwaliteit van de daaropvolgende zware sets verlagen, en de twee prikkels sturen deels tegenstrijdige aanpassingssignalen aan het lichaam. Hoe groter de rol van intensiteit, duur en frequentie van de cardio, hoe sterker dit effect kan uitpakken. Genoeg tijd ertussen — of ze gewoon op andere dagen zetten — houdt dit effect klein.',
+    watBetekentDitInDeApp:
+      'Dit is waarom de wekelijke planner intensieve cardio nooit op je zware beendag zelf en ook niet op de dag ervoor plant, ongeacht welke vaste trainingsdagen je kiest.',
+    bronnen: [
+      {
+        titel: 'Concurrent training: a meta-analysis examining interference of aerobic and resistance exercises',
+        auteurs: 'Wilson, Marín, Rhea, Wilson, Loenneke & Anderson',
+        jaar: 2012,
+        url: 'https://pubmed.ncbi.nlm.nih.gov/22002517/',
       },
     ],
   },
@@ -352,7 +369,7 @@ export const FAQ_ENTRIES: FaqEntry[] = [
     antwoord:
       'Opwarmen verhoogt spier- en gewrichtstemperatuur, verbetert kracht bij de eerste zware sets, en hangt samen met minder blessures — vooral bij plotselinge belastingspieken. Een paar lichtere opbouwsets richting je werkgewicht is meestal voldoende; een lange cardio-warming-up is niet per se nodig voor krachttraining.',
     watBetekentDitInDeApp:
-      'Dit is een goede gewoonte naast het gewichtsadvies van de app, ook al berekent de app dit nog niet automatisch.',
+      'Daarom herinnert de app je bij de eerste set van elke oefening aan een paar opbouwsets, naast het gewichtsadvies zelf.',
     bronnen: [
       {
         titel: 'Exercise-Based Strategies from Warm-Up to Training: A Systematic Review of Performance Enhancement and Injury Prevention',
@@ -473,7 +490,7 @@ export const FAQ_ENTRIES: FaqEntry[] = [
     antwoord:
       'Te weinig slaap over meerdere nachten (slaaprestrictie) verlaagt aantoonbaar je maximale kracht, vooral bij samengestelde oefeningen zoals squat en bankdrukken. Slaap is ook essentieel voor spiereiwitsynthese en hormoonbalans, twee kernprocessen van herstel. Één enkele slechte nacht heeft meestal weinig effect, maar structureel te weinig slaap wel.',
     watBetekentDitInDeApp:
-      'Dit is een factor die de herstel-inschatting (readiness) beïnvloedt naast trainingsvolume zelf.',
+      'De herstel-inschatting (readiness) kan slaapkwaliteit als optioneel signaal meewegen naast trainingsvolume zelf, maar de app vraagt je daar op dit moment nog niet naar — voorlopig baseert de inschatting zich alleen op wat en hoe zwaar je hebt getraind.',
     bronnen: [
       {
         titel: 'Implications of sleep loss or sleep deprivation on muscle strength: a systematic review',

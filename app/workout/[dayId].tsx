@@ -25,6 +25,7 @@ import { generateId } from '@/lib/id';
 import { enqueue } from '@/lib/offlineQueue';
 import { useProfile } from '@/lib/profile';
 import { fetchProgramDayWithExercises, type ProgramDayForWorkout, type WorkoutExercise } from '@/lib/programs';
+import { restGuidanceFor } from '@/lib/restGuidance';
 import { useSyncStatus } from '@/lib/useSyncStatus';
 import { colors } from '@/theme/colors';
 import { layout } from '@/theme/layout';
@@ -164,7 +165,7 @@ export default function WorkoutScreen() {
         {isCardio ? (
           <CardioLogger key={exercise.id} exercise={exercise} workoutId={workoutId} goal={goal} />
         ) : (
-          <StrengthLogger key={exercise.id} exercise={exercise} workoutId={workoutId} />
+          <StrengthLogger key={exercise.id} exercise={exercise} workoutId={workoutId} goal={goal} />
         )}
       </ScrollView>
 
@@ -193,7 +194,7 @@ interface LoggedSet {
   rir: number;
 }
 
-function StrengthLogger({ exercise, workoutId }: { exercise: WorkoutExercise; workoutId: string }) {
+function StrengthLogger({ exercise, workoutId, goal }: { exercise: WorkoutExercise; workoutId: string; goal: Goal }) {
   const { session } = useAuth();
   const [history, setHistory] = useState<HistorySession[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
@@ -261,6 +262,10 @@ function StrengthLogger({ exercise, workoutId }: { exercise: WorkoutExercise; wo
         advice={advice}
       />
 
+      {loggedSets.length === 0 && (
+        <Text style={styles.tip}>Tip: bouw op naar dit gewicht met 1-2 lichtere sets voordat je je eerste werkset logt.</Text>
+      )}
+
       <Stepper label="Gewicht (kg)" value={weightKg} step={exercise.weightIncrementKg} min={0} onChange={setWeightKg} />
       <Stepper label="Herhalingen" value={reps} step={1} min={0} onChange={setReps} />
 
@@ -276,6 +281,7 @@ function StrengthLogger({ exercise, workoutId }: { exercise: WorkoutExercise; wo
       <View style={styles.logButtonWrap}>
         <Button onPress={logSet}>{`Set ${loggedSets.length + 1} loggen`}</Button>
       </View>
+      <Text style={styles.tip}>{restGuidanceFor(goal)}</Text>
 
       {loggedSets.length > 0 && (
         <View style={styles.loggedList}>
@@ -587,6 +593,11 @@ const styles = StyleSheet.create({
   },
   target: {
     marginBottom: spacing.lg,
+  },
+  tip: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    marginTop: spacing.sm,
   },
   adviceCard: {
     marginTop: spacing.lg,
