@@ -1,10 +1,13 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { addDays, startOfIsoWeek } from '@/lib/dateWeek';
+import { toLocalDateString } from '@/lib/dates';
 import { calculateStreak } from '@/lib/streak';
 import { fetchActiveProgram } from '@/lib/programs';
 import { fetchWorkoutDates } from '@/lib/progressStats';
-import { computeWeekStrip, type WeekStripDay } from '@/lib/weekStrip';
+import { ensureScheduledWindow, fetchScheduledSessions } from '@/lib/schedule';
+import { computeWeekStrip, scheduleToWeekStrip, type WeekStripDay } from '@/lib/weekStrip';
 import { colors } from '@/theme/colors';
 import { radii } from '@/theme/radii';
 import { spacing } from '@/theme/spacing';
@@ -54,6 +57,22 @@ export function WeekOverview({ userId }: { userId: string }) {
       const [program, workoutDates] = await Promise.all([fetchActiveProgram(userId), fetchWorkoutDates(userId)]);
       const daysPerWeek = program?.days.length ?? 0;
       setStreak(calculateStreak(workoutDates, daysPerWeek));
+
+      // Prefers the real calendar schedule (exactly what "Vandaag" and the schema page also
+      // read) over the workoutDates heuristic, so the strip never shows a second, possibly-
+      // divergent guess. Falls back silently when no schedule exists yet (older accounts).
+      try {
+        await ensureScheduledWindow(userId);
+        const weekStart = startOfIsoWeek(new Date());
+        const weekEnd = addDays(weekStart, 6);
+        const rows = await fetchScheduledSessions(userId, toLocalDateString(weekStart), toLocalDateString(weekEnd));
+        if (rows.length > 0) {
+          setWeekStrip(scheduleToWeekStrip(rows));
+          return;
+        }
+      } catch {
+        // fall through to the heuristic below
+      }
       setWeekStrip(computeWeekStrip(workoutDates, daysPerWeek));
     } catch {
       // Fails soft: the streak/week-strip is a motivational nicety, never a blocker for the rest of the dashboard.

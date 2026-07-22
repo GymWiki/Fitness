@@ -53,6 +53,8 @@ export interface OnboardingProfileExtras {
   gender?: Gender | null;
   birthYear?: number | null;
   targetWeightKg?: number | null;
+  /** 1 (Monday) .. 7 (Sunday), length equal to `intake.daysPerWeek`. */
+  preferredWeekdays: number[];
 }
 
 /**
@@ -138,6 +140,7 @@ export async function saveGeneratedProgram(
     gender: profileExtras.gender ?? null,
     birth_year: profileExtras.birthYear ?? null,
     target_weight_kg: profileExtras.targetWeightKg ?? null,
+    preferred_weekdays: profileExtras.preferredWeekdays,
   });
   if (profileError) throw profileError;
 

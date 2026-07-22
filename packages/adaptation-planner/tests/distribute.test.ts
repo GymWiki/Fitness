@@ -63,6 +63,56 @@ describe('distributeSessions', () => {
     expect(forbiddenWeekdays).not.toContain(cardioEntry.weekday);
   });
 
+  it('uses preferredWeekdays for strength days when the count matches exactly', () => {
+    const threeDays: StrengthDayInput[] = [
+      { id: 'a', name: 'Full Body A', isHeavyLowerBody: true },
+      { id: 'b', name: 'Full Body B', isHeavyLowerBody: true },
+      { id: 'c', name: 'Full Body C', isHeavyLowerBody: true },
+    ];
+    const plan = distributeSessions(threeDays, [], 'mixed', [1, 3, 5]);
+    const strengthWeekdays = plan.filter((e) => e.strengthDayId).map((e) => e.weekday).sort();
+    expect(strengthWeekdays).toEqual([1, 3, 5]);
+  });
+
+  it('maps preferredWeekdays to strength days in ascending weekday order regardless of input order', () => {
+    const threeDays: StrengthDayInput[] = [
+      { id: 'first', name: 'Day 1', isHeavyLowerBody: false },
+      { id: 'second', name: 'Day 2', isHeavyLowerBody: false },
+      { id: 'third', name: 'Day 3', isHeavyLowerBody: false },
+    ];
+    const plan = distributeSessions(threeDays, [], 'mixed', [5, 1, 3]);
+    expect(plan.find((e) => e.strengthDayId === 'first')?.weekday).toBe(1);
+    expect(plan.find((e) => e.strengthDayId === 'second')?.weekday).toBe(3);
+    expect(plan.find((e) => e.strengthDayId === 'third')?.weekday).toBe(5);
+  });
+
+  it('falls back to the default pattern when preferredWeekdays length does not match strengthDays', () => {
+    const plan = distributeSessions(upperLowerDays, [], 'mixed', [1, 3]);
+    const strengthWeekdays = new Set(plan.filter((e) => e.strengthDayId).map((e) => e.weekday));
+    expect(strengthWeekdays.size).toBe(4);
+  });
+
+  it('falls back to the default pattern when preferredWeekdays has duplicates collapsing below the required count', () => {
+    const threeDays: StrengthDayInput[] = [
+      { id: 'a', name: 'Day A', isHeavyLowerBody: false },
+      { id: 'b', name: 'Day B', isHeavyLowerBody: false },
+      { id: 'c', name: 'Day C', isHeavyLowerBody: false },
+    ];
+    const plan = distributeSessions(threeDays, [], 'mixed', [1, 1, 3]);
+    const strengthWeekdays = new Set(plan.filter((e) => e.strengthDayId).map((e) => e.weekday));
+    expect(strengthWeekdays.size).toBe(3);
+  });
+
+  it('still protects heavy-day adjacency when strength days are pinned to preferredWeekdays', () => {
+    const plan = distributeSessions(upperLowerDays, [{ id: 'interval-1', intensity: 'high' }], 'mixed', [1, 2, 4, 5]);
+    const heavyWeekdays = plan.filter((e) => ['lower-a', 'lower-b'].includes(e.strengthDayId ?? '')).map((e) => e.weekday);
+    const forbiddenWeekdays = [...heavyWeekdays, ...heavyWeekdays.map(dayBefore)];
+
+    const cardioEntry = plan.find((e) => e.cardioSessionId === 'interval-1');
+    expect(cardioEntry).toBeDefined();
+    expect(forbiddenWeekdays).not.toContain(cardioEntry!.weekday);
+  });
+
   it('protects the mix goal\'s newly-generated cardio baseline from heavy-day adjacency too (bugfix confirmation)', () => {
     // Shaped like what @fitness/program-generator now seeds for goal 'mixed'
     // (buildCardioSessionTypes(2) => ['zone2', 'interval']) — this was previously

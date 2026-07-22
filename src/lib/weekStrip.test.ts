@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeWeekStrip } from './weekStrip';
+import { computeWeekStrip, scheduleToWeekStrip } from './weekStrip';
 
 // Week of 2026-07-20 (Mon) .. 2026-07-26 (Sun); "today" in these tests is Friday 2026-07-24 unless noted.
 const MON = new Date(2026, 6, 20);
@@ -69,5 +69,35 @@ describe('computeWeekStrip', () => {
     expect(sunday!.date.toDateString()).toBe(SUN.toDateString());
     expect(sunday!.status).toBe('rest');
     expect(sunday!.isToday).toBe(true);
+  });
+});
+
+describe('scheduleToWeekStrip', () => {
+  it('maps each scheduled_sessions row status onto its exact calendar date, verbatim', () => {
+    const rows = [
+      { date: '2026-07-20', status: 'done' as const },
+      { date: '2026-07-21', status: 'rest' as const },
+      { date: '2026-07-22', status: 'planned' as const },
+      { date: '2026-07-23', status: 'missed' as const },
+    ];
+    const days = scheduleToWeekStrip(rows, WED);
+    expect(statuses(days)).toEqual(['done', 'rest', 'planned', 'missed', 'rest', 'rest', 'rest']);
+  });
+
+  it('falls back to rest for a date with no matching row instead of leaving a gap', () => {
+    const days = scheduleToWeekStrip([], FRI);
+    expect(statuses(days)).toEqual(['rest', 'rest', 'rest', 'rest', 'rest', 'rest', 'rest']);
+  });
+
+  it('flags isToday against the same reference date passed in, independent of row data', () => {
+    const days = scheduleToWeekStrip([{ date: '2026-07-24', status: 'planned' as const }], FRI);
+    const today = days.find((d) => d.isToday);
+    expect(today?.date.toDateString()).toBe(FRI.toDateString());
+    expect(today?.status).toBe('planned');
+  });
+
+  it('ignores rows outside the current Mon-Sun week', () => {
+    const days = scheduleToWeekStrip([{ date: '2026-07-15', status: 'done' as const }], WED); // last week's Wednesday
+    expect(days.every((d) => d.status !== 'done')).toBe(true);
   });
 });

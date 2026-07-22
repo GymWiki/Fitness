@@ -9,6 +9,7 @@ import { ModalHeader } from '@/components/ModalHeader';
 import { MuscleRecoveryRing } from '@/components/MuscleRecoveryRing';
 import { RecoveryCurveChart } from '@/components/RecoveryCurveChart';
 import { useAuth } from '@/lib/auth';
+import { fetchActiveProgram, type ActiveProgram } from '@/lib/programs';
 import { compareMuscleRecoveryPriority, describeMuscleRecoveryTap } from '@/lib/recoveryReadiness';
 import { fetchAllMuscleGroupRecoveryEstimates } from '@/lib/recovery';
 import { STATUS_COLOR, STATUS_LABEL } from '@/lib/recoveryLabels';
@@ -30,6 +31,7 @@ export default function ReadinessScreen() {
   const { session } = useAuth();
   const { width: windowWidth } = useWindowDimensions();
   const [estimates, setEstimates] = useState<Map<string, RecoveryEstimate>>(new Map());
+  const [program, setProgram] = useState<ActiveProgram | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState<string | null>(null);
@@ -40,7 +42,12 @@ export default function ReadinessScreen() {
     setIsLoading(true);
     setError(null);
     try {
-      setEstimates(await fetchAllMuscleGroupRecoveryEstimates(session.user.id));
+      const [nextEstimates, activeProgram] = await Promise.all([
+        fetchAllMuscleGroupRecoveryEstimates(session.user.id),
+        fetchActiveProgram(session.user.id),
+      ]);
+      setEstimates(nextEstimates);
+      setProgram(activeProgram);
     } catch {
       setError('Kon je herstelstatus niet laden.');
     } finally {
@@ -64,6 +71,14 @@ export default function ReadinessScreen() {
 
   const selectedEstimate = selectedMuscleGroup ? estimates.get(selectedMuscleGroup) : undefined;
   const tapInfo = selectedMuscleGroup && selectedEstimate ? describeMuscleRecoveryTap(selectedMuscleGroup, selectedEstimate) : null;
+
+  // "Readiness zegt: klaar" moet direct naar de bijbehorende training kunnen leiden in plaats
+  // van de gebruiker zelf naar Schema te laten zoeken — de eerste actieve programmadag die deze
+  // spiergroep traint, ongeacht of dat een kracht- of cardio-dag is.
+  function trainingDayIdForMuscleGroup(muscleGroup: string): string | null {
+    return program?.days.find((day) => day.exercises.some((exercise) => exercise.muscleGroup === muscleGroup))?.id ?? null;
+  }
+  const canStartTrainingForStatus = (status: RecoveryStatus) => status === 'ready' || status === 'window_closing';
 
   // Defaults to the muscle group closest to (or already in) its window — same
   // sort `sortedMuscleGroups` already uses — so the curve always shows
@@ -149,6 +164,16 @@ export default function ReadinessScreen() {
                 {tapInfo.statusLabel}
               </Text>
               <Text style={styles.tapCardExplanation}>{tapInfo.explanation}</Text>
+              {selectedEstimate &&
+                canStartTrainingForStatus(selectedEstimate.status) &&
+                (() => {
+                  const dayId = trainingDayIdForMuscleGroup(tapInfo.muscleGroup);
+                  return dayId ? (
+                    <Pressable onPress={() => router.push(`/workout/${dayId}`)}>
+                      <Text style={styles.tapCardStartLink}>Start training →</Text>
+                    </Pressable>
+                  ) : null;
+                })()}
               <Pressable
                 onPress={() => {
                   setSelectedMuscleGroup(null);
@@ -277,5 +302,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginTop: spacing.xs,
+  },
+  tapCardStartLink: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: spacing.sm,
   },
 });

@@ -6,6 +6,7 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
 import { LineChart } from '@/components/LineChart';
+import { WeekdayPicker } from '@/components/WeekdayPicker';
 import { useAuth } from '@/lib/auth';
 import { BMI_CATEGORY_LABELS, bmiCategory, calculateBmi } from '@/lib/bmi';
 import { formatShortDate } from '@/lib/dates';
@@ -33,6 +34,13 @@ const EQUIPMENT_OPTIONS: Array<{ value: EquipmentType; label: string }> = [
 
 const DAYS_PER_WEEK_OPTIONS = [2, 3, 4, 5, 6];
 
+const WEEKDAY_LABELS: Record<number, string> = { 1: 'ma', 2: 'di', 3: 'wo', 4: 'do', 5: 'vr', 6: 'za', 7: 'zo' };
+
+function formatPreferredWeekdays(days: number[] | null): string {
+  if (!days || days.length === 0) return 'Nog niet ingesteld';
+  return [...days].sort((a, b) => a - b).map((day) => WEEKDAY_LABELS[day]).join(', ');
+}
+
 function parsePositiveFloat(value: string): number | null {
   const parsed = Number.parseFloat(value.replace(',', '.'));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -44,10 +52,18 @@ function ProfileEditForm({ onClose }: { onClose: () => void }) {
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel | null>(profile?.experienceLevel ?? null);
   const [daysPerWeek, setDaysPerWeek] = useState<number | null>(profile?.daysPerWeek ?? null);
   const [equipment, setEquipment] = useState<EquipmentType | null>(profile?.equipment ?? null);
+  const [preferredWeekdays, setPreferredWeekdays] = useState<number[]>(
+    profile?.preferredWeekdays && profile.preferredWeekdays.length === profile.daysPerWeek ? profile.preferredWeekdays : [],
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSave = experienceLevel !== null && daysPerWeek !== null && equipment !== null;
+  const canSave = experienceLevel !== null && daysPerWeek !== null && equipment !== null && preferredWeekdays.length === daysPerWeek;
+
+  function selectDaysPerWeek(value: number) {
+    setDaysPerWeek(value);
+    if (preferredWeekdays.length !== value) setPreferredWeekdays([]);
+  }
 
   async function handleSave() {
     if (!profile || !canSave) return;
@@ -59,6 +75,7 @@ function ProfileEditForm({ onClose }: { onClose: () => void }) {
         experienceLevel: experienceLevel!,
         daysPerWeek: daysPerWeek!,
         equipment: equipment!,
+        preferredWeekdays,
       });
       await refresh();
       onClose();
@@ -86,11 +103,19 @@ function ProfileEditForm({ onClose }: { onClose: () => void }) {
       <Text style={styles.fieldLabel}>Dagen per week</Text>
       <View style={styles.chipRow}>
         {DAYS_PER_WEEK_OPTIONS.map((value) => (
-          <Pressable key={value} style={[styles.dayButton, daysPerWeek === value && styles.dayButtonSelected]} onPress={() => setDaysPerWeek(value)}>
+          <Pressable key={value} style={[styles.dayButton, daysPerWeek === value && styles.dayButtonSelected]} onPress={() => selectDaysPerWeek(value)}>
             <Text style={[styles.dayButtonText, daysPerWeek === value && styles.chipTextSelected]}>{value}</Text>
           </Pressable>
         ))}
       </View>
+
+      {daysPerWeek !== null && (
+        <>
+          <Text style={styles.fieldLabel}>Voorkeursdagen</Text>
+          <Text style={styles.body}>We plannen je schema vanaf nu op deze vaste dagen, 2 weken vooruit.</Text>
+          <WeekdayPicker selected={preferredWeekdays} requiredCount={daysPerWeek} onChange={setPreferredWeekdays} />
+        </>
+      )}
 
       <Text style={styles.fieldLabel}>Materiaal</Text>
       <View style={styles.chipRow}>
@@ -238,6 +263,7 @@ export default function ProfileScreen() {
             <InfoRow label="Streeffysiek" value={profile.targetPhysique ? physiqueOption(profile.targetPhysique).label : '–'} />
             <InfoRow label="Ervaring" value={EXPERIENCE_OPTIONS.find((o) => o.value === profile.experienceLevel)?.label ?? '–'} />
             <InfoRow label="Dagen per week" value={String(profile.daysPerWeek)} />
+            <InfoRow label="Voorkeursdagen" value={formatPreferredWeekdays(profile.preferredWeekdays)} />
             <InfoRow label="Materiaal" value={EQUIPMENT_OPTIONS.find((o) => o.value === profile.equipment)?.label ?? '–'} />
             <Pressable onPress={() => router.push('/switch-goal')} hitSlop={8}>
               <Text style={styles.switchGoalLink}>Ander doel kiezen</Text>

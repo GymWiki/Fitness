@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import { toLocalDateString } from './dates';
 import { generateId } from './id';
 import { supabase } from './supabase';
 
@@ -84,6 +85,21 @@ async function runAction(action: QueuedAction): Promise<void> {
       .from('workouts')
       .upsert({ id: workoutId, user_id: userId, program_day_id: programDayId, performed_at: performedAt });
     if (error) throw error;
+
+    // Marks today's calendar-scheduled session (if any) as done. A no-op update
+    // (0 rows affected, no error) when the user has no calendar schedule yet.
+    // Deliberately best-effort: the workout itself is already safely persisted
+    // above, so a failure here must never block this (or later, FIFO-ordered)
+    // queue items from flushing.
+    try {
+      await supabase
+        .from('scheduled_sessions')
+        .update({ status: 'done', workout_id: workoutId })
+        .eq('user_id', userId)
+        .eq('scheduled_date', toLocalDateString(new Date(performedAt)));
+    } catch {
+      // best-effort, see comment above
+    }
     return;
   }
 

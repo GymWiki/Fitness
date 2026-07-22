@@ -1,4 +1,5 @@
 import { addDays, isBeforeLocalDay, isSameLocalDay, startOfIsoWeek } from './dateWeek';
+import { toLocalDateString } from './dates';
 
 export type WeekDayStatus = 'done' | 'planned' | 'rest' | 'missed';
 
@@ -23,6 +24,30 @@ export interface WeekStripDay {
  * days) was already met by the time that day passed, applied uniformly to
  * every empty day rather than pinning an assumed plan to one date.
  */
+export interface ScheduledDayForStrip {
+  /** yyyy-mm-dd. */
+  date: string;
+  status: WeekDayStatus;
+}
+
+/**
+ * Builds the same Monday-Sunday strip shape as `computeWeekStrip`, but read
+ * directly off the calendar schedule (`scheduled_sessions`) instead of
+ * re-derived from raw workout dates — so the dashboard's week strip always
+ * shows exactly what the schedule itself says, never a second, possibly-
+ * divergent guess. A date with no matching row (should only happen for an
+ * not-yet-generated edge of the window) falls back to 'rest' rather than
+ * leaving a gap.
+ */
+export function scheduleToWeekStrip(rows: ScheduledDayForStrip[], today: Date = new Date()): WeekStripDay[] {
+  const weekStart = startOfIsoWeek(today);
+  const statusByDate = new Map(rows.map((row) => [row.date, row.status]));
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = addDays(weekStart, index);
+    return { date, status: statusByDate.get(toLocalDateString(date)) ?? 'rest', isToday: isSameLocalDay(date, today) };
+  });
+}
+
 export function computeWeekStrip(workoutDates: Date[], daysPerWeek: number, today: Date = new Date()): WeekStripDay[] {
   const weekStart = startOfIsoWeek(today);
   const daysInWeek = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
