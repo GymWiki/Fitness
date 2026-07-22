@@ -43,6 +43,26 @@ async function fetchMonthlyWorkoutCountFromNetwork(userId: string): Promise<numb
   return count ?? 0;
 }
 
+/**
+ * Every workout's `performed_at`, as `Date`s — the raw material for the
+ * dashboard's streak (`streak.ts`) and week-strip (`weekStrip.ts`), which
+ * both need actual calendar dates rather than the epoch-week buckets
+ * `fetchLongestStreak` below uses for its own, different "longest streak
+ * ever" metric. Cached as ISO strings (`fetchWithCache` round-trips through
+ * `JSON.stringify`/`parse`, which wouldn't revive `Date` instances on a
+ * cache-fallback read) and only converted to `Date` after the cache layer.
+ */
+export async function fetchWorkoutDates(userId: string): Promise<Date[]> {
+  const isoDates = await fetchWithCache(`workout_dates:${userId}`, () => fetchWorkoutDatesFromNetwork(userId));
+  return isoDates.map((iso) => new Date(iso));
+}
+
+async function fetchWorkoutDatesFromNetwork(userId: string): Promise<string[]> {
+  const { data, error } = await supabase.from('workouts').select('performed_at').eq('user_id', userId);
+  if (error) throw error;
+  return (data ?? []).map((row) => row.performed_at as string);
+}
+
 function weekBucket(iso: string): number {
   return Math.floor(Date.parse(iso) / WEEK_MS);
 }
