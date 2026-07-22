@@ -728,6 +728,120 @@ regressie in onze eigen code als een volgende breaking change aan de
 OFF-kant — precies de klasse fout die deze keer onopgemerkt bleef omdat
 de deploy zelf wél slaagde.
 
+**Dashboard ("Vandaag") samenvoegen.**
+
+*Layout.* Header (ongewijzigd), dan streak + weekoverzicht-strip
+(`WeekOverview.tsx`), dan de bestaande week-review-banner (alleen zichtbaar
+als er een openstaande weekevaluatie is), dan vier samenvattingskaarten
+(training/voeding/progressie/readiness). Onder 700px breed staan de vier
+kaarten onder elkaar; daarboven een 2×2-grid (`useWindowDimensions`,
+zelfde patroon als de breedte-afhankelijke grafiekbreedte in
+Progressie). Elke kaart is zelf de tik-ingang naar zijn volledige pagina
+(`Card`'s eigen `onPress`, geen geneste knop) — geen los "bekijk meer"-
+element nodig.
+
+*Architectuurkeuze: zelf-ophalende kaarten, niet één centrale `load()`.*
+Elke bestaande screen in deze app haalt zijn data centraal op (één
+`load()` + `Promise.allSettled`) en rendert pas als dat klaar is — maar de
+opdracht vroeg expliciet om onafhankelijke laadstatussen per kaart, zodat
+een trage voedingsquery niet de rest blokkeert. Dat is met één centrale
+`load()` niet eerlijk te bouwen (elke sectie zou op de traagste wachten).
+Daarom hebben `TrainingTodayCard`/`NutritionSummaryCard`/
+`ProgressSummaryCard`/`ReadinessCard` elk hún eigen fetch + laad-/
+foutstatus, via `useFocusEffect` (zelfde ververs-bij-focus-patroon als
+elders). Dit is een bewuste, geïsoleerde uitzondering op "componenten zijn
+presentational, screens halen data op" — expliciet hier genoteerd zodat
+het niet als inconsistentie oogt. Alle vier delen wel hetzelfde
+`DashboardCardShell.tsx` (kop met icoon, laad-/foutstatus, content, CTA-
+regel) zodat ze ondanks de aparte databronnen visueel één systeem blijven,
+zoals gevraagd. Elke kaart hergebruikt uitsluitend al bestaande
+fetch-functies (`fetchActiveProgram`, `fetchWeeklyVolume` +
+`fetchMonthlyWorkoutCount`, `fetchAllMuscleGroupRecoveryEstimates`,
+`computeUserNutritionTargets` + `fetchFoodLogsForDate`) — geen nieuwe
+berekeningslogica, zoals de opdracht vereiste.
+
+*0a/0b — Streak en weekoverzicht: waarom weken, geen dagen.* De opdracht
+vroeg om de definitie te laten aansluiten op hoe trainingsdagen al worden
+bijgehouden. Dit programma-model rotateert door dag 1/2/3/... op basis van
+het totaal aantal voltooide workouts (`fetchActiveProgram`'s
+`nextDayOrder`), niet op een vaste kalenderdag-planning — er bestaat dus
+geen "woensdag is pushdag"-concept om een gemiste specifieke dag tegen af
+te zetten. Een dag-voor-dag "gemiste geplande sessie"-definitie zou een
+niet-bestaand due-date-model moeten verzinnen (willekeurig, en dus precies
+de "kunstmatige vergoelijking" die de opdracht wil vermijden). In plaats
+daarvan hergebruikt de streak dezelfde week-granulariteit als de
+adaptatieplanner's eigen therapietrouw-check (`evaluateAdherence` in
+`@fitness/adaptation-planner`: voltooide sessies t.o.v. `daysPerWeek` per
+week) — nieuwe `src/lib/streak.ts` (`calculateStreak`) telt aaneengesloten,
+volledig afgelopen weken waarin het weekdoel is gehaald, terugtellend
+vanaf de meest recente afgeronde week; de lopende week telt bewust nergens
+in mee (die is nog niet voorbij). Nieuwe `src/lib/weekStrip.ts`
+(`computeWeekStrip`) gebruikt exact dezelfde
+"weekdoel-gehaald-of-niet"-vraag, maar dan toegepast op de 7
+kalenderdagen van de huidige week (ma-zo): elke dag zonder log is
+'gemist' als het weekdoel op dat moment nog niet gehaald is en de dag al
+voorbij is, 'gepland' als de dag nog moet komen (of vandaag is), en
+anders 'rustdag' — zonder te doen alsof bekend is wélke specifieke dag
+"had moeten" gebeuren. Beide functies zijn puur en gebouwd op nieuwe
+`src/lib/dateWeek.ts`-hulpfuncties (`startOfIsoWeek`/`addDays`/
+`isSameLocalDay`/`isBeforeLocalDay`). Data komt van een nieuwe
+`fetchWorkoutDates()` in `progressStats.ts` (naast de al bestaande
+`fetchLongestStreak`, die een ander, losstaand "langste streak ooit"-
+kental blijft voor de Progressie-tab) — gecachet als ISO-strings, niet als
+`Date`-objecten, omdat `fetchWithCache` via `JSON.stringify`/`parse`
+round-trippt en dat `Date`-instanties bij een cache-fallback-lezing niet
+zou reviven.
+
+*Kaart 4 — Readiness: nieuwe volledige-schermroute.* `app/body-diagram.tsx`
+(nieuw, modal) rendert dezelfde `BodyDiagram` uit de vorige verfijning op
+volledig formaat met eigen databron — de compacte kaart toont alleen een
+telling ("N spiergroepen klaar om te trainen") plus een tik-ingang, zoals
+de opdracht als alternatief voor een verkleinde illustratie aanbood.
+
+*Consolidatie: drie stukjes bestaande UI zijn vervangen, niet
+gedupliceerd.* De opdracht is expliciet een "layout-/samenvoegingsprompt"
+— bestaande onderdelen samenvoegen, dus is bewust gekozen om drie
+overlappende stukjes van de oude "Vandaag" niet naast de nieuwe kaarten te
+blijven tonen:
+- De losse "Je {spiergroep} is hersteld"-banner: de Readiness-kaart (en de
+  volledige lichaamsillustratie erachter) is nu de ene plek voor
+  herstelstatus, in plaats van twee plekken die hetzelfde op net iets
+  andere manieren zeggen.
+- De losse eiwit-tekort-banner: het signaal zelf (`checkProteinShortfall`)
+  is niet verwijderd, maar verplaatst náár de Voeding-kaart zelf (een
+  kleine waarschuwingsregel onder de calorieën-/eiwitregel) — nog steeds
+  zichtbaar, alleen niet meer als apart, plek-innemend blok op een
+  dashboard dat juist compacter moest worden.
+- De per-oefening `RecoveryIndicator`-stipjes op de oude, volledige
+  dag-kaart: de nieuwe `TrainingTodayCard` toont bewust alleen naam,
+  omschrijving en aantal oefeningen (zoals de opdracht vroeg), geen volle
+  oefeningenlijst meer. Het onderliggende `RecoveryIndicator.tsx`-component
+  had daardoor nergens meer een aanroeper en is verwijderd (ongebruikte
+  code, geen nieuwe plek ervoor verzonnen) — herstelstatus per spiergroep
+  is nu overal de Readiness-kaart/het lichaamsdiagram, niet twee losse
+  weergaven die uit de pas kunnen gaan lopen.
+
+*Tests.* Puur getest, geen React Native-componenttests (zelfde conventie
+als de rest van deze codebase): `dateWeek.test.ts` (11), `weekStrip.test.ts`
+(9 — quotum-gehaald-dus-rest, quotum-niet-gehaald-dus-gemist/gepland,
+vandaag nooit "gemist", meerdere sessies dezelfde dag tellen als één,
+andere week wordt genegeerd), `streak.test.ts` (7 — geen historie,
+aaneengesloten weken, stopt bij de eerst-tegengekomen tekortweek zonder
+oudere goede weken alsnog mee te tellen, lopende week telt nooit mee,
+dubbele sessies dezelfde dag geen dubbele credit, `daysPerWeek` ≤ 0 crasht
+niet).
+
+*Verificatie.* Zelfde aanpak als de vorige twee verfijningen: een
+tijdelijke ongeauthenticeerde previewroute die de echte pure functies
+(`computeWeekStrip`/`calculateStreak`) met verzonnen datums en de echte
+`DashboardCardShell`/kaartinhoud met vaste testdata rendert (de vier
+kaarten doen zelf een live Supabase-aanroep, wat in deze sandbox toch niet
+zou lukken — dat is dus code-review + typecheck + de pure-functietests
+hierboven, niet een screenshot, die voor de dataverwerking garant staan),
+via web-export + Playwright gescreenshot op zowel smalle (telefoon) als
+brede (≥700px, 2×2-grid) viewport, inclusief de 'gemist'-dagstatus
+apart gecontroleerd. Geen consolefouten. Achteraf volledig teruggedraaid.
+
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
   platform-onafhankelijk TypeScript-package (geen React Native-, Expo- of
   Supabase-imports). De Expo-app hangt eraan via `@fitness/progression-engine`.
@@ -1423,7 +1537,7 @@ app/                        Expo Router routes
     index.tsx                  Intake-wizard: streeffysiek, basismetingen (+BMI), voorkeuren, samenvatting
   (tabs)/
     _layout.tsx                Tab navigator: Vandaag / Schema / Voeding / Progressie / Profiel
-    index.tsx                   "Vandaag": eerstvolgend dagschema + "Start workout"
+    index.tsx                   "Vandaag" dashboard: streak + weekoverzicht-strip + 4 samenvattingskaarten (training/voeding/progressie/readiness)
     schema.tsx                  "Schema": dagen/oefeningen bekijken, bewerken, vervangen, herordenen, toevoegen/verwijderen
     nutrition.tsx                "Voeding": dagoverzicht vs. calorie-/macrodoel, scannen/zoeken, recent/favorieten, dag-log
     progress.tsx                 "Progressie": kerncijfers, per-oefening links, aanpassingstijdlijn-preview, voedingssectie
@@ -1438,6 +1552,7 @@ app/                        Expo Router routes
   faq.tsx                        "Wetenschap": doorzoekbare, categoriseerbare FAQ met bronvermelding
   food-scan.tsx                  Barcode scannen (expo-camera) -> OFF-cache-opzoeking -> FoodLogForm
   food-search.tsx                Naam zoeken (expliciete actie, geen live type-ahead) -> FoodLogForm
+  body-diagram.tsx               Volledig-scherm lichaamsdiagram (Readiness-kaart tikt hier naartoe) — eigen databron
 src/
   components/
     SyncStatusBadge.tsx        Offline / N niet gesynchroniseerd / Gesynchroniseerd — workout + Vandaag
@@ -1446,11 +1561,16 @@ src/
     LineChart.tsx                Herbruikbare SVG-lijngrafiek (uit historiescherm getrokken; ook gebruikt in Profiel)
     StatBars.tsx                  Geanimeerde stat-balken voor de streeffysiek-kaarten
     PhysiquePicker.tsx            Het ene streeffysiek-keuzescherm — onboarding, profiel-edit én switch-goal delen dit
-    RecoveryIndicator.tsx          Kleurenbolletje + label voor de supercompensatie-status per spiergroep
-    icons.tsx                    Dependency-vrije SVG-icoonset (tab-iconen + PhysiqueSilhouette-placeholder)
+    icons.tsx                    Dependency-vrije SVG-icoonset (tab-iconen + PhysiqueSilhouette-placeholder + FlameIcon)
     NutrientProgressBar.tsx       Gevulde-balk voortgang voor een dagtotaal (calorieën/macro) t.o.v. doel
     FoodLogForm.tsx                Gedeeld door scan/zoeken/handmatig: hoeveelheid + macro-preview + loggen + favoriet
-    BodyDiagram.tsx                Lichaamsdiagram op Vandaag: voor-/achterkant-toggle, tikbare spiergroep-regio's, legenda, tik-kaart
+    BodyDiagram.tsx                Lichaamsdiagram (dashboard-Readiness-kaart tikt door naar /body-diagram, dat dit rendert): voor-/achterkant-toggle, tikbare spiergroep-regio's, legenda, tik-kaart
+    WeekOverview.tsx               Dashboard: streak-regel + 7-daagse weekoverzicht-strip, eigen fetch (fetchActiveProgram + fetchWorkoutDates)
+    DashboardCardShell.tsx        Gedeelde kop/laadstatus/CTA-schil voor de vier dashboardkaarten — presentational only
+    TrainingTodayCard.tsx          Dashboardkaart 1: eigen fetch (fetchActiveProgram), naam/omschrijving/aantal oefeningen + "Start workout"
+    NutritionSummaryCard.tsx       Dashboardkaart 2: eigen fetch (targets + dagtotalen + eiwit-tekortsignaal), compacte calorieënbalk
+    ProgressSummaryCard.tsx        Dashboardkaart 3: eigen fetch (fetchWeeklyVolume/fetchMonthlyWorkoutCount), twee StatTiles
+    ReadinessCard.tsx              Dashboardkaart 4: eigen fetch (fetchAllMuscleGroupRecoveryEstimates), "N spiergroepen klaar"
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
     auth.tsx                   AuthProvider + useAuth hook
@@ -1462,7 +1582,7 @@ src/
     programs.ts                saveGeneratedProgram / insertProgramStructure / fetchActiveProgram / fetchProgramDayWithExercises / fetchProgramHistory
     switchGoal.ts                 switchGoal() — nieuw programma invoegen, oude archiveren, profiel + adjustment-log bijwerken
     schemaEditor.ts              fetchSchemaProgram + updateExerciseSets/replaceExercise/swapExerciseOrder/addDay/removeDay
-    progressStats.ts             fetchWeeklyVolume / fetchMonthlyWorkoutCount / fetchLongestStreak
+    progressStats.ts             fetchWeeklyVolume / fetchMonthlyWorkoutCount / fetchLongestStreak / fetchWorkoutDates
     offlineQueue.ts             FIFO sync-wachtrij (AsyncStorage), idempotente upserts, subscribeToQueue
     offlineCache.ts              fetchWithCache() — network-first leescache, fallback bij netwerkfout
     useSyncStatus.ts             Hook: wachtrijlengte (live) + NetInfo online/offline
@@ -1476,7 +1596,7 @@ src/
     adjustmentLabels.ts          Gedeelde Nederlandse labels per AdjustmentType (week-review + geschiedenis)
     dates.ts                     formatShortDate() — gedeeld door workout-, historie- en geschiedenisscherm
     recovery.ts                   fetchRecoveryEstimate() + fetchAllMuscleGroupRecoveryEstimates() — cross-programma laatste-sessie-lookup + estimateRecoveryState()
-    recoveryLabels.ts              STATUS_LABEL / STATUS_COLOR — React Native-vrij, gedeeld door RecoveryIndicator.tsx en pure src/lib-modules
+    recoveryLabels.ts              STATUS_LABEL / STATUS_COLOR — React Native-vrij, gedeeld door BodyDiagram.tsx en pure src/lib-modules
     recoveryColor.ts / recoveryColor.test.ts
                                   recoveryColor() — vloeiende kleurgradiënt voor het lichaamsdiagram, puur op basis van bestaande RecoveryEstimate-velden
     bodyDiagramRegions.ts / bodyDiagramRegions.test.ts
@@ -1492,6 +1612,12 @@ src/
     proteinSignal.ts               checkProteinShortfall() — koppelt detectProteinShortfall aan profile/doel
     searchThrottle.ts / searchThrottle.test.ts
                                   canSearchNow() — pure debounce-guard voor het zoekscherm
+    dateWeek.ts / dateWeek.test.ts
+                                  startOfIsoWeek / addDays / isSameLocalDay / isBeforeLocalDay — gedeelde datumhulp voor streak.ts + weekStrip.ts
+    weekStrip.ts / weekStrip.test.ts
+                                  computeWeekStrip() — 7-daagse ma-zo statusstrip (gedaan/gepland/rustdag/gemist) uit workout-datums + daysPerWeek
+    streak.ts / streak.test.ts
+                                  calculateStreak() — aaneengesloten volledig-afgelopen weken met weekdoel gehaald, zelfde granulariteit als adaptatieplanner's therapietrouw-check
   theme/
     colors.ts                  Donker kleurenpalet (uitgebreid met surfaceElevated/warning/muted-varianten)
     spacing.ts / radii.ts / typography.ts
@@ -1586,7 +1712,7 @@ Actions-tab (in plaats van stil niets te doen), dus het ergste geval is
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages + root src/lib samen (190 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (217 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```
