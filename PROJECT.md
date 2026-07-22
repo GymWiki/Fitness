@@ -1070,6 +1070,67 @@ status `window_passed` — curve toont de afgevlakte staart dicht bij de
 basislijn, precies zoals de status "voorbij" beschrijft). Geen
 consolefouten.
 
+**Correctie: vorm en vulkleuren van de supercompensatie-curve.**
+
+*Wat er niet goed was.* De eerste versie van de curve begon al ín de dip op
+t=0 (in plaats van op de basislijn te starten en er daarna pas vanaf te
+zakken), had een ongelijke dip-diepte/piek-hoogte (20 vs. 15), en de duur
+van fase 3+4 (herstel-tot-piek-tot-terugval) was losgekoppeld van fase 1+2
+(`we+(we-ws)*1.2` i.p.v. gekoppeld aan `ws`). Dit is een gerichte correctie
+van uitsluitend de wiskundige curve-vorm en de vulkleuren — de grafiek zelf,
+de koppeling aan de spiergroep-ringen, de "nu"-marker en de tik-interactie
+zijn ongewijzigd blijven werken.
+
+*Nieuwe vorm — één doorlopende lijn, vier fases, symmetrisch.*
+`generateRecoveryCurve()` (`packages/progression-engine/src/recoveryCurve.ts`)
+gebruikt nu vijf ankerpunten in plaats van vier: `(0, basislijn)` →
+`(troughHours, dipLevel)` → `(windowStartHours, basislijn)` →
+`(peakHours, peakLevel)` → `(decayEndHours, basislijn)`. Fase 1+2 (dip, terug
+naar basislijn) duurt exact `D = windowStartHours`; fase 3+4 (piek, terug
+naar basislijn) duurt ook exact `D`, in twee gelijke helften gesplitst
+(`peakHours = windowStartHours + D*0.5`, `decayEndHours = windowStartHours + D`)
+— dus fase 3+4 samen even lang als fase 1+2, zoals gevraagd. Dip-diepte en
+piek-hoogte zijn nu gelijk (`AMPLITUDE = 20` voor beide, in plaats van eerder
+20 vs. 15). `peakHours`/`decayEndHours` zijn nieuwe velden op `RecoveryCurve`
+zodat de UI-laag deze grenzen leest in plaats van ze zelf opnieuw te
+berekenen (zelfde "geen tweede, mogelijk afwijkende berekening"-principe als
+bij het "nu"-punt). De gesamplede punten bevatten nu ook altijd exact de
+ankertijden (naast de reguliere vaste-interval-sampling), zodat de
+vulgebieden in de UI-laag precies op deze grenzen kunnen knippen zonder zelf
+te hoeven interpoleren.
+
+*Vulkleuren — oppervlak tussen lijn en basislijn, niet langer een
+tijdvak-rechthoek.* De oude `Rect` die het venster `[windowStartHours,
+windowEndHours]` als vlak markeerde is vervangen door drie polygonen die het
+gebied tussen de curve en de basislijn zelf vullen: het dip-gebied (fase
+1+2, onder de basislijn) met `colors.warningMuted` ("verlies"/oranje), het
+piek-opbouw-gebied (fase 3, van `windowStartHours` tot `peakHours`, boven de
+basislijn) met `colors.accentMuted` ("winst"/groen), en het terugval-gebied
+(fase 4, van `peakHours` tot `decayEndHours`) met een nieuwe SVG
+`LinearGradient` die dezelfde groene kleur laat uitdoven naar transparant —
+de "uitdovende, lichte variant" die de opdracht als alternatief voor "geen
+vulling" noemde. De bestaande rood/oranje/groen-lijnkleur per punt-status
+(via `recoveryColor()`, ongewijzigd) blijft daar bovenop getekend staan.
+
+*Tests.* De twee vorm-specifieke tests zijn herzien (het "net getraind"-
+scenario gebruikt nu een uur dat écht in de nieuwe dip valt, in plaats van
+het oude uur dat bij de nieuwe vorm bijna nog op de basislijn zou liggen) en
+5 nieuwe tests toegevoegd die de vier-fasen-vorm zelf bewijzen: start exact
+op de basislijn bij uur 0, dip onder de basislijn met terugkeer naar de
+basislijn op precies `windowStartHours`, piek boven de basislijn met
+terugkeer naar de basislijn op precies `decayEndHours`, dip-diepte en
+piek-hoogte binnen 0,01 van elkaar, en fase 3+4-duur exact gelijk aan fase
+1+2-duur. 12 tests in totaal in `recoveryCurve.test.ts` (was 7).
+
+*Verificatie.* Zelfde tijdelijke-previewroute-aanpak, dit keer specifiek
+gericht op de vorm: voor een net-getrainde spiergroep begint de curve zichtbaar
+op de basislijn en zakt daarna pas in de dip (rode "nu"-stip vlak bij het
+begin, niet meer al in het dieptepunt); voor alle vijf statussen zijn beide
+vulkleuren duidelijk te onderscheiden (oranje onder, groen boven, met een
+zichtbare uitdoving richting het einde); voor `no_data` blijft de curve
+terecht een platte lijn zonder vulling (geen fase om te vullen). Geen
+consolefouten.
+
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
   platform-onafhankelijk TypeScript-package (geen React Native-, Expo- of
   Supabase-imports). De Expo-app hangt eraan via `@fitness/progression-engine`.
@@ -1944,7 +2005,7 @@ Actions-tab (in plaats van stil niets te doen), dus het ergste geval is
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages + root src/lib samen (230 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (235 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```
