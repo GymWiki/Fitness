@@ -1,10 +1,11 @@
 import { ALL_MUSCLE_GROUPS } from '@fitness/program-generator';
-import type { RecoveryEstimate, RecoveryStatus } from '@fitness/progression-engine';
+import { generateRecoveryCurve, type RecoveryEstimate, type RecoveryStatus } from '@fitness/progression-engine';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Card } from '@/components/Card';
 import { MuscleRecoveryRing } from '@/components/MuscleRecoveryRing';
+import { RecoveryCurveChart } from '@/components/RecoveryCurveChart';
 import { useAuth } from '@/lib/auth';
 import { compareMuscleRecoveryPriority, describeMuscleRecoveryTap } from '@/lib/recoveryReadiness';
 import { fetchAllMuscleGroupRecoveryEstimates } from '@/lib/recovery';
@@ -26,10 +27,12 @@ const LEGEND_STATUSES: RecoveryStatus[] = ['recovering', 'window_closing', 'read
 export default function ReadinessScreen() {
   const router = useRouter();
   const { session } = useAuth();
+  const { width: windowWidth } = useWindowDimensions();
   const [estimates, setEstimates] = useState<Map<string, RecoveryEstimate>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState<string | null>(null);
+  const [curveMuscleGroupOverride, setCurveMuscleGroupOverride] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -61,6 +64,16 @@ export default function ReadinessScreen() {
   const selectedEstimate = selectedMuscleGroup ? estimates.get(selectedMuscleGroup) : undefined;
   const tapInfo = selectedMuscleGroup && selectedEstimate ? describeMuscleRecoveryTap(selectedMuscleGroup, selectedEstimate) : null;
 
+  // Defaults to the muscle group closest to (or already in) its window — same
+  // sort `sortedMuscleGroups` already uses — so the curve always shows
+  // something meaningful before the user taps anything. A tapped ring
+  // overrides this, but closing the tap-card doesn't blank the curve back out.
+  const curveMuscleGroup = curveMuscleGroupOverride ?? sortedMuscleGroups[0]?.[0] ?? null;
+  const curveEstimate = curveMuscleGroup ? estimates.get(curveMuscleGroup) : undefined;
+  const curve = curveMuscleGroup && curveEstimate ? generateRecoveryCurve(curveMuscleGroup, curveEstimate) : null;
+  const curveTapInfo = curveMuscleGroup && curveEstimate ? describeMuscleRecoveryTap(curveMuscleGroup, curveEstimate) : null;
+  const chartWidth = Math.min(windowWidth - 80, 480);
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -83,10 +96,32 @@ export default function ReadinessScreen() {
           <View style={styles.grid}>
             {sortedMuscleGroups.map(([muscleGroup, estimate]) => (
               <View key={muscleGroup} style={styles.gridTile}>
-                <MuscleRecoveryRing muscleGroup={muscleGroup} estimate={estimate} onPress={() => setSelectedMuscleGroup(muscleGroup)} />
+                <MuscleRecoveryRing
+                  muscleGroup={muscleGroup}
+                  estimate={estimate}
+                  onPress={() => {
+                    setSelectedMuscleGroup(muscleGroup);
+                    setCurveMuscleGroupOverride(muscleGroup);
+                  }}
+                />
               </View>
             ))}
           </View>
+
+          {curve && curveEstimate && curveTapInfo && (
+            <View style={styles.curveSection}>
+              <Text style={styles.curveTitle}>Herstelcurve — {curveTapInfo.muscleGroup}</Text>
+              <RecoveryCurveChart curve={curve} estimate={curveEstimate} width={chartWidth} />
+              <Text style={[styles.curveStatus, { color: STATUS_COLOR[curveEstimate.status] }]}>{curveTapInfo.statusLabel}</Text>
+              <Text style={styles.curveExplanation}>{curveTapInfo.explanation}</Text>
+              <Text style={styles.curveDisclaimer}>
+                Dit is een geïllustreerd, vereenvoudigd model, geen exacte meting.{' '}
+                <Text style={styles.curveDisclaimerLink} onPress={() => router.push({ pathname: '/faq', params: { openId: 'supercompensatie' } })}>
+                  Meer uitleg in de FAQ →
+                </Text>
+              </Text>
+            </View>
+          )}
 
           <View style={styles.legendRow}>
             {LEGEND_STATUSES.map((status) => (
@@ -168,6 +203,34 @@ const styles = StyleSheet.create({
   gridTile: {
     width: '31%',
     alignItems: 'center',
+  },
+  curveSection: {
+    gap: spacing.xs,
+  },
+  curveTitle: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  curveStatus: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: spacing.xs,
+  },
+  curveExplanation: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  curveDisclaimer: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: spacing.xs,
+  },
+  curveDisclaimerLink: {
+    color: colors.accent,
+    fontWeight: '600',
   },
   legendRow: {
     flexDirection: 'row',
