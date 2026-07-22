@@ -842,6 +842,79 @@ via web-export + Playwright gescreenshot op zowel smalle (telefoon) als
 brede (≥700px, 2×2-grid) viewport, inclusief de 'gemist'-dagstatus
 apart gecontroleerd. Geen consolefouten. Achteraf volledig teruggedraaid.
 
+**FAQ uitbreiden: categorieën + 19 nieuwe vragen.**
+
+*Categorieën.* `FaqCategory` ging van drie categorieën (`Kracht`/`Herstel`/
+`Cardio`) naar de zes gevraagde (`Training & progressie`/`Voeding`/
+`Uitvoering & techniek`/`Resultaten & tijdlijn`/`Herstel & leefstijl`/
+`Overig`). Alle acht bestaande vragen zijn verplaatst naar
+`Training & progressie` — inclusief `supercompensatie` en `deload`, die
+inhoudelijk over herstel gaan maar functioneel programmering/periodisering
+zijn (dezelfde soort vraag als volume/RIR/doelen), niet leefstijl-herstel
+zoals de nieuwe `Herstel & leefstijl`-categorie bedoelt. Het scherm zelf
+(`app/faq.tsx`) had **geen enkele wijziging nodig**: de categorie-chips-rij
+en `searchFaqEntries()` werkten al generiek over `FAQ_CATEGORIES`/
+`FaqCategory` heen (gebouwd in een eerdere sessie met precies dit voor
+ogen) — nieuwe categorieën verschijnen vanzelf als extra filterchips,
+zoeken werkt vanzelf over alle categorieën heen.
+
+*19 in plaats van 20 nieuwe vragen.* De titel van de opdracht noemde "20
+nieuwe vragen", maar de opdracht zelf werkte precies 19 vragen volledig
+uit (5 Voeding, 6 Uitvoering & techniek, 3 Resultaten & tijdlijn, 2
+Herstel & leefstijl, 3 Overig). In plaats van zelf een 20e vraag te
+verzinnen om het genoemde getal te halen — wat zou botsen met "elke bron
+gecontroleerd, geen medisch advies zonder onderbouwing" — zijn precies de
+19 volledig gespecificeerde vragen gebouwd, en is dit verschil hier
+expliciet genoteerd in plaats van stilzwijgend opgevuld.
+
+*Brononderzoek (serieus genomen, niet een formaliteit).* Voor alle ~25
+bronnen van de 19 nieuwe vragen is elke URL/titel/auteur/jaar
+gecontroleerd (net als bij de oorspronkelijke acht vragen, zie de opmerking
+bovenaan dit bestand over de eerder gevonden PMC11679080-mismatch). Vier
+echte fouten in de door de opdracht aangeleverde bronvermeldingen zijn
+hersteld:
+- **Anaboolvenster-vraag**: de opgegeven URL (`tandfonline.com/.../1550-2783-10-53`)
+  wees naar een ander, bestaand artikel (Schoenfeld/Aragon/Krieger over
+  eiwit-timing-en-kracht) door een tikfout in de DOI (een extra "3").
+  Vervangen door de daadwerkelijke Aragon & Schoenfeld (2013)
+  "anabolic window"-publicatie (PMC3577439).
+- **Resultaten-tijdlijn-vraag**: de opgegeven bron ("Damas et al.") stond
+  op een niet-officiële PDF-spiegel (een privésite) en de auteursnaam
+  klopte niet met het opgegeven artikel. Het daadwerkelijke artikel bij die
+  titel is DeFreitas, Beck, Stock, Dillon & Kasishke (2011) — vervangen
+  door de officiële PubMed-vindplaats.
+- **Plateaus-vraag**: de opgegeven auteurs ("Lorenz & Morrison, 2015")
+  klopten niet bij het meegegeven PMC-artikel; dat artikel is daadwerkelijk
+  Evans (2019), zelfde titel. Auteur/jaar gecorrigeerd, URL bleef correct.
+- **Leeftijd-en-training-vraag**: de placeholder-brontitel is vervangen
+  door de daadwerkelijke titel/auteurs van het artikel achter de gegeven
+  ScienceDirect-URL (Hawley, Bell, Huang, Gibbs & Churchward-Venne, 2023).
+
+  Daarnaast zijn een paar kleinere onnauwkeurigheden gecorrigeerd
+  (jaartallen bij de Harvard Health- en InBody-bronnen bleken de
+  laatst-herziene datum 2026 te zijn, niet een ouder jaar; twee
+  publicatietitels misten een paar woorden t.o.v. de echte titel;
+  de slaap-vraag miste een van de twee opgegeven bronnen in de eerste
+  versie, nu toegevoegd). Zie de git-historie van `faqContent.ts` voor het
+  volledige verificatieproces.
+
+*Tests.* Twee nieuwe checks in `faqContent.test.ts` die specifiek tegen
+categorie-drift bewaken (niet alleen relevant voor content, maar voor de
+'geen lege filtertab'-eis uit de opdracht): elke `FAQ_ENTRIES`-categorie
+moet een geldige `FAQ_CATEGORIES`-waarde zijn, en elke `FAQ_CATEGORIES`-
+waarde moet minstens één vraag hebben.
+
+*Verificatie.* Screenshot-geverifieerd via dezelfde tijdelijke-previewroute-
+aanpak als eerder — in dit geval extra eenvoudig omdat `app/faq.tsx` geen
+Supabase-afhankelijkheid heeft, dus de previewroute rendert het échte
+scherm 1-op-1 (`export { default } from './faq'`), niet een los mockje.
+Bevestigd: alle 6 categorie-chips tonen correct, filteren op "Voeding"
+toont precies de 5 verwachte vragen, een vraag uitklappen toont antwoord/
+app-uitleg/bronnen in het bestaande format, en zoeken op "DOMS" (met
+"Alle" geselecteerd) vindt beide vragen die dat onderwerp raken across
+categories heen (Uitvoering & techniek + Overig). Geen consolefouten.
+Achteraf volledig teruggedraaid.
+
 - **Monorepo met npm workspaces**: `packages/progression-engine` is een losstaand,
   platform-onafhankelijk TypeScript-package (geen React Native-, Expo- of
   Supabase-imports). De Expo-app hangt eraan via `@fitness/progression-engine`.
@@ -1712,7 +1785,7 @@ Actions-tab (in plaats van stil niets te doen), dus het ergste geval is
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages + root src/lib samen (217 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (219 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```
