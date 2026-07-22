@@ -39,7 +39,7 @@ function RootNavigator() {
         <Stack.Screen name="faq" options={{ presentation: 'modal' }} />
         <Stack.Screen name="food-scan" options={{ presentation: 'modal' }} />
         <Stack.Screen name="food-search" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="body-diagram" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="readiness" options={{ presentation: 'modal' }} />
       </Stack.Protected>
     </Stack>
   );
