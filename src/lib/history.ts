@@ -1,59 +1,35 @@
 import type { CardioLog, CardioSessionType } from '@fitness/progression-engine';
+import { getAllAsync } from './db';
 import { groupSetLogsIntoSessions } from './exerciseHistoryMerge';
-import { fetchWithCache } from './offlineCache';
-import { supabase } from './supabase';
 
 export type { HistorySession, HistorySet } from './exerciseHistoryMerge';
 
 /**
- * Past sessions for an exercise, oldest first, grouped by workout —
- * matched by exercise NAME across every program the user has ever had
- * (active and archived), not by a single day_exercise_id. A goal switch
- * archives the old program and creates a new one with fresh day_exercise
- * rows, so matching by name (instead of by the row that happens to exist
- * right now) is what keeps history — and therefore the strength advice —
- * continuous across that switch. RLS scopes every query here to the owning
- * user. Cached (keyed by user+exercise name, stable across switches) so the
- * strength advice can still be computed without a connection.
+ * Past sessions for an exercise, oldest first, grouped by workout — matched
+ * by exercise NAME across every program ever created (active and archived),
+ * not by a single day_exercise_id. A goal switch archives the old program
+ * and creates a new one with fresh day_exercise rows, so matching by name
+ * (instead of by the row that happens to exist right now) is what keeps
+ * history — and therefore the strength advice — continuous across that
+ * switch.
  */
-export async function fetchExerciseHistory(userId: string, exerciseName: string) {
-  return fetchWithCache(`exercise_history:${userId}:${exerciseName}`, () => fetchExerciseHistoryFromNetwork(userId, exerciseName));
-}
-
-async function fetchExerciseHistoryFromNetwork(userId: string, exerciseName: string) {
-  const { data: programRows, error: programsError } = await supabase.from('programs').select('id').eq('user_id', userId);
-  if (programsError) throw programsError;
-  const programIds = (programRows ?? []).map((row) => row.id);
-  if (programIds.length === 0) return [];
-
-  const { data: dayRows, error: daysError } = await supabase.from('program_days').select('id').in('program_id', programIds);
-  if (daysError) throw daysError;
-  const dayIds = (dayRows ?? []).map((row) => row.id);
-  if (dayIds.length === 0) return [];
-
-  const { data: exerciseRows, error: exercisesError } = await supabase
-    .from('day_exercises')
-    .select('id')
-    .eq('exercise_name', exerciseName)
-    .in('program_day_id', dayIds);
-  if (exercisesError) throw exercisesError;
-  const dayExerciseIds = (exerciseRows ?? []).map((row) => row.id);
+export async function fetchExerciseHistory(exerciseName: string) {
+  const exerciseRows = await getAllAsync<{ id: string }>('select id from day_exercises where exercise_name = ?', [exerciseName]);
+  const dayExerciseIds = exerciseRows.map((row) => row.id);
   if (dayExerciseIds.length === 0) return [];
 
-  const { data: setRows, error: setLogsError } = await supabase
-    .from('set_logs')
-    .select('workout_id, day_exercise_id, set_order, weight_kg, reps, rir')
-    .in('day_exercise_id', dayExerciseIds)
-    .order('set_order', { ascending: true });
-  if (setLogsError) throw setLogsError;
-  if (!setRows || setRows.length === 0) return [];
+  const placeholders = dayExerciseIds.map(() => '?').join(',');
+  const setRows = await getAllAsync<{ workout_id: string; day_exercise_id: string; set_order: number; weight_kg: number; reps: number; rir: number }>(
+    `select workout_id, day_exercise_id, set_order, weight_kg, reps, rir from set_logs where day_exercise_id in (${placeholders}) order by set_order asc`,
+    dayExerciseIds,
+  );
+  if (setRows.length === 0) return [];
 
   const workoutIds = [...new Set(setRows.map((row) => row.workout_id))];
-  const { data: workoutRows, error: workoutsError } = await supabase
-    .from('workouts')
-    .select('id, performed_at')
-    .in('id', workoutIds);
-  if (workoutsError) throw workoutsError;
+  const workoutRows = await getAllAsync<{ id: string; performed_at: string }>(
+    `select id, performed_at from workouts where id in (${workoutIds.map(() => '?').join(',')})`,
+    workoutIds,
+  );
 
   return groupSetLogsIntoSessions(
     setRows.map((row) => ({
@@ -64,7 +40,7 @@ async function fetchExerciseHistoryFromNetwork(userId: string, exerciseName: str
       reps: row.reps,
       rir: row.rir,
     })),
-    (workoutRows ?? []).map((row) => ({ id: row.id, performedAt: row.performed_at })),
+    workoutRows.map((row) => ({ id: row.id, performedAt: row.performed_at })),
   );
 }
 
@@ -78,29 +54,30 @@ export interface CardioHistoryEntry extends CardioLog {
  * `CardioLog[]` so it can be passed straight into the progression-engine
  * functions (`computeWeeklyDistribution`, `adviseCardioProgression`).
  * `date` comes from the parent workout's `performed_at` — cardio_logs has no
- * date column of its own, same as set_logs. RLS scopes this to the owning
- * user. Cached so the cardio advice can still be computed without a connection.
+ * date column of its own, same as set_logs.
  */
 export async function fetchCardioHistory(dayExerciseId: string): Promise<CardioHistoryEntry[]> {
-  return fetchWithCache(`cardio_history:${dayExerciseId}`, () => fetchCardioHistoryFromNetwork(dayExerciseId));
-}
-
-async function fetchCardioHistoryFromNetwork(dayExerciseId: string): Promise<CardioHistoryEntry[]> {
-  const { data: cardioRows, error: cardioError } = await supabase
-    .from('cardio_logs')
-    .select('id, workout_id, session_type, duration_minutes, rpe, distance_km, avg_heart_rate, rounds')
-    .eq('day_exercise_id', dayExerciseId);
-  if (cardioError) throw cardioError;
-  if (!cardioRows || cardioRows.length === 0) return [];
+  const cardioRows = await getAllAsync<{
+    id: string;
+    workout_id: string;
+    session_type: string;
+    duration_minutes: number;
+    rpe: number;
+    distance_km: number | null;
+    avg_heart_rate: number | null;
+    rounds: number | null;
+  }>(
+    'select id, workout_id, session_type, duration_minutes, rpe, distance_km, avg_heart_rate, rounds from cardio_logs where day_exercise_id = ?',
+    [dayExerciseId],
+  );
+  if (cardioRows.length === 0) return [];
 
   const workoutIds = [...new Set(cardioRows.map((row) => row.workout_id))];
-  const { data: workoutRows, error: workoutsError } = await supabase
-    .from('workouts')
-    .select('id, performed_at')
-    .in('id', workoutIds);
-  if (workoutsError) throw workoutsError;
-
-  const performedAtByWorkoutId = new Map((workoutRows ?? []).map((row) => [row.id, row.performed_at as string]));
+  const workoutRows = await getAllAsync<{ id: string; performed_at: string }>(
+    `select id, performed_at from workouts where id in (${workoutIds.map(() => '?').join(',')})`,
+    workoutIds,
+  );
+  const performedAtByWorkoutId = new Map(workoutRows.map((row) => [row.id, row.performed_at]));
 
   const entries: CardioHistoryEntry[] = [];
   for (const row of cardioRows) {

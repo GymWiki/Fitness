@@ -8,7 +8,6 @@ import { EmptyState } from '@/components/EmptyState';
 import { ModalHeader } from '@/components/ModalHeader';
 import { MuscleRecoveryRing } from '@/components/MuscleRecoveryRing';
 import { RecoveryCurveChart } from '@/components/RecoveryCurveChart';
-import { useAuth } from '@/lib/auth';
 import { fetchActiveProgram, type ActiveProgram } from '@/lib/programs';
 import { compareMuscleRecoveryPriority, describeMuscleRecoveryTap } from '@/lib/recoveryReadiness';
 import { fetchAllMuscleGroupRecoveryEstimates } from '@/lib/recovery';
@@ -28,7 +27,6 @@ const LEGEND_STATUSES: RecoveryStatus[] = ['recovering', 'window_closing', 'read
  */
 export default function ReadinessScreen() {
   const router = useRouter();
-  const { session } = useAuth();
   const { width: windowWidth } = useWindowDimensions();
   const [estimates, setEstimates] = useState<Map<string, RecoveryEstimate>>(new Map());
   const [program, setProgram] = useState<ActiveProgram | null>(null);
@@ -38,14 +36,10 @@ export default function ReadinessScreen() {
   const [curveMuscleGroupOverride, setCurveMuscleGroupOverride] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!session) return;
     setIsLoading(true);
     setError(null);
     try {
-      const [nextEstimates, activeProgram] = await Promise.all([
-        fetchAllMuscleGroupRecoveryEstimates(session.user.id),
-        fetchActiveProgram(session.user.id),
-      ]);
+      const [nextEstimates, activeProgram] = await Promise.all([fetchAllMuscleGroupRecoveryEstimates(), fetchActiveProgram()]);
       setEstimates(nextEstimates);
       setProgram(activeProgram);
     } catch {
@@ -53,7 +47,7 @@ export default function ReadinessScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [session]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {

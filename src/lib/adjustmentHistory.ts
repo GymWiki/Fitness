@@ -1,5 +1,5 @@
 import type { AdjustmentType } from '@fitness/adaptation-planner';
-import { supabase } from './supabase';
+import { getAllAsync, getFirstAsync } from './db';
 
 export interface AdjustmentHistoryEntry {
   id: string;
@@ -13,50 +13,47 @@ export interface AdjustmentHistoryEntry {
   createdAt: string;
 }
 
-/**
- * Every automatic adjustment ever made to the user's active program, newest
- * first — the "why did my schedule change" history. RLS scopes this to the
- * owning user via program_adjustments' select policy.
- */
-export async function fetchAdjustmentHistory(userId: string): Promise<AdjustmentHistoryEntry[]> {
-  const { data: programRow, error: programError } = await supabase
-    .from('programs')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .order('started_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (programError) throw programError;
+/** Every automatic adjustment ever made to the active program, newest first — the "why did my schedule change" history. */
+export async function fetchAdjustmentHistory(): Promise<AdjustmentHistoryEntry[]> {
+  const programRow = await getFirstAsync<{ id: string }>(`select id from programs where status = 'active' order by started_at desc limit 1`);
   if (!programRow) return [];
 
-  const { data: rows, error } = await supabase
-    .from('program_adjustments')
-    .select('id, week_number, adjustment_type, day_exercise_id, previous_value, new_value, reason, is_deload, created_at')
-    .eq('program_id', programRow.id)
-    .order('week_number', { ascending: false })
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  if (!rows || rows.length === 0) return [];
+  const rows = await getAllAsync<{
+    id: string;
+    week_number: number;
+    adjustment_type: AdjustmentType;
+    day_exercise_id: string | null;
+    previous_value: string | null;
+    new_value: string | null;
+    reason: string;
+    is_deload: number;
+    created_at: string;
+  }>(
+    `select id, week_number, adjustment_type, day_exercise_id, previous_value, new_value, reason, is_deload, created_at
+     from program_adjustments where program_id = ? order by week_number desc, created_at desc`,
+    [programRow.id],
+  );
+  if (rows.length === 0) return [];
 
   const dayExerciseIds = [...new Set(rows.map((row) => row.day_exercise_id).filter((id): id is string => id !== null))];
-  const { data: exerciseRows, error: exercisesError } =
+  const exerciseRows =
     dayExerciseIds.length === 0
-      ? { data: [], error: null }
-      : await supabase.from('day_exercises').select('id, exercise_name').in('id', dayExerciseIds);
-  if (exercisesError) throw exercisesError;
-
-  const exerciseNameById = new Map((exerciseRows ?? []).map((row) => [row.id, row.exercise_name as string]));
+      ? []
+      : await getAllAsync<{ id: string; exercise_name: string }>(
+          `select id, exercise_name from day_exercises where id in (${dayExerciseIds.map(() => '?').join(',')})`,
+          dayExerciseIds,
+        );
+  const exerciseNameById = new Map(exerciseRows.map((row) => [row.id, row.exercise_name]));
 
   return rows.map((row) => ({
     id: row.id,
     weekNumber: row.week_number,
-    type: row.adjustment_type as AdjustmentType,
+    type: row.adjustment_type,
     exerciseName: row.day_exercise_id ? (exerciseNameById.get(row.day_exercise_id) ?? null) : null,
-    previousValue: row.previous_value as number | null,
-    newValue: row.new_value as number | null,
+    previousValue: row.previous_value !== null ? (JSON.parse(row.previous_value) as number) : null,
+    newValue: row.new_value !== null ? (JSON.parse(row.new_value) as number) : null,
     explanation: row.reason,
-    isDeload: row.is_deload,
+    isDeload: row.is_deload === 1,
     createdAt: row.created_at,
   }));
 }

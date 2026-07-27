@@ -1,5 +1,5 @@
-import { fetchWithCache } from './offlineCache';
-import { supabase } from './supabase';
+import { getAllAsync, runAsync } from './db';
+import { generateId } from './id';
 
 export interface BodyMeasurement {
   id: string;
@@ -34,27 +34,19 @@ export interface NewMeasurement {
 }
 
 /** Every measurement is a new row — this is a time series, never an overwrite of a "current weight" field. */
-export async function saveMeasurement(userId: string, input: NewMeasurement): Promise<void> {
-  const { error } = await supabase.from('body_measurements').insert({
-    user_id: userId,
-    weight_kg: input.weightKg,
-    height_cm: input.heightCm,
-    body_fat_percent: input.bodyFatPercent ?? null,
-  });
-  if (error) throw error;
+export async function saveMeasurement(input: NewMeasurement): Promise<void> {
+  const now = new Date().toISOString();
+  await runAsync(
+    `insert into body_measurements (id, measured_at, weight_kg, height_cm, body_fat_percent, created_at)
+     values (?, ?, ?, ?, ?, ?)`,
+    [generateId(), now.slice(0, 10), input.weightKg, input.heightCm, input.bodyFatPercent ?? null, now],
+  );
 }
 
-/** Oldest first, for charting — cached so Profiel/Progressie can still show the last-known trend offline. */
-export async function fetchMeasurementHistory(userId: string): Promise<BodyMeasurement[]> {
-  return fetchWithCache(`measurements:${userId}`, () => fetchMeasurementHistoryFromNetwork(userId));
-}
-
-async function fetchMeasurementHistoryFromNetwork(userId: string): Promise<BodyMeasurement[]> {
-  const { data, error } = await supabase
-    .from('body_measurements')
-    .select('id, measured_at, weight_kg, height_cm, body_fat_percent')
-    .eq('user_id', userId)
-    .order('measured_at', { ascending: true });
-  if (error) throw error;
-  return (data ?? []).map((row) => fromRow(row as BodyMeasurementRow));
+/** Oldest first, for charting. */
+export async function fetchMeasurementHistory(): Promise<BodyMeasurement[]> {
+  const rows = await getAllAsync<BodyMeasurementRow>(
+    'select id, measured_at, weight_kg, height_cm, body_fat_percent from body_measurements order by measured_at asc',
+  );
+  return rows.map(fromRow);
 }

@@ -46,15 +46,15 @@ function StripDot({ day }: { day: WeekStripDay }) {
  * Streak line + 7-day week strip for the top of the "Vandaag" dashboard.
  * Self-fetching (own loading/error state) so a slow query here never
  * blocks the four cards below it — same "independent card" treatment as
- * `TrainingTodayCard`/`NutritionSummaryCard`/etc.
+ * `TrainingTodayCard`/`ReadinessCard`/etc.
  */
-export function WeekOverview({ userId }: { userId: string }) {
+export function WeekOverview() {
   const [streak, setStreak] = useState<number | null>(null);
   const [weekStrip, setWeekStrip] = useState<WeekStripDay[] | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [program, workoutDates] = await Promise.all([fetchActiveProgram(userId), fetchWorkoutDates(userId)]);
+      const [program, workoutDates] = await Promise.all([fetchActiveProgram(), fetchWorkoutDates()]);
       const daysPerWeek = program?.days.length ?? 0;
       setStreak(calculateStreak(workoutDates, daysPerWeek));
 
@@ -62,10 +62,10 @@ export function WeekOverview({ userId }: { userId: string }) {
       // read) over the workoutDates heuristic, so the strip never shows a second, possibly-
       // divergent guess. Falls back silently when no schedule exists yet (older accounts).
       try {
-        await ensureScheduledWindow(userId);
+        await ensureScheduledWindow();
         const weekStart = startOfIsoWeek(new Date());
         const weekEnd = addDays(weekStart, 6);
-        const rows = await fetchScheduledSessions(userId, toLocalDateString(weekStart), toLocalDateString(weekEnd));
+        const rows = await fetchScheduledSessions(toLocalDateString(weekStart), toLocalDateString(weekEnd));
         if (rows.length > 0) {
           setWeekStrip(scheduleToWeekStrip(rows));
           return;
@@ -79,7 +79,7 @@ export function WeekOverview({ userId }: { userId: string }) {
       setStreak(null);
       setWeekStrip(null);
     }
-  }, [userId]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {

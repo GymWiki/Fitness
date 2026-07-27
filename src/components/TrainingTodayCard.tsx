@@ -22,7 +22,7 @@ function describeDay(day: ActiveProgramDay): string {
   return muscleGroups.length > 0 ? `${exerciseCount} ${exerciseLabel} · ${joinWithEn(muscleGroups.map((mg) => mg.toLowerCase()))}` : `${exerciseCount} ${exerciseLabel}`;
 }
 
-export function TrainingTodayCard({ userId }: { userId: string }) {
+export function TrainingTodayCard() {
   const router = useRouter();
   const [program, setProgram] = useState<ActiveProgram | null>(null);
   // undefined = no calendar schedule available (older account, or fetch failed) -> fall back to the day-count rotation.
@@ -34,23 +34,23 @@ export function TrainingTodayCard({ userId }: { userId: string }) {
     setIsLoading(true);
     setError(null);
     try {
-      setProgram(await fetchActiveProgram(userId));
+      setProgram(await fetchActiveProgram());
     } catch {
       setError('Kon je training niet laden.');
       setIsLoading(false);
       return;
     }
     try {
-      await ensureScheduledWindow(userId);
+      await ensureScheduledWindow();
       const today = todayLocalDateString();
-      const rows = await fetchScheduledSessions(userId, today, today);
+      const rows = await fetchScheduledSessions(today, today);
       setScheduledToday(rows[0] ?? null);
     } catch {
       setScheduledToday(undefined); // calendar planning unavailable right now — fall back silently, this section never blocks on it
     } finally {
       setIsLoading(false);
     }
-  }, [userId]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {

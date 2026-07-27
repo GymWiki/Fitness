@@ -8,7 +8,7 @@ import { DashboardCardShell } from './DashboardCardShell';
 import { TrendingUpIcon } from './icons';
 import { StatTile } from './StatTile';
 
-export function ProgressSummaryCard({ userId }: { userId: string }) {
+export function ProgressSummaryCard() {
   const router = useRouter();
   const [weeklyVolume, setWeeklyVolume] = useState<number | null>(null);
   const [monthlyWorkouts, setMonthlyWorkouts] = useState<number | null>(null);
@@ -19,7 +19,7 @@ export function ProgressSummaryCard({ userId }: { userId: string }) {
     setIsLoading(true);
     setError(null);
     try {
-      const [volume, monthly] = await Promise.all([fetchWeeklyVolume(userId), fetchMonthlyWorkoutCount(userId)]);
+      const [volume, monthly] = await Promise.all([fetchWeeklyVolume(), fetchMonthlyWorkoutCount()]);
       setWeeklyVolume(volume);
       setMonthlyWorkouts(monthly);
     } catch {
@@ -27,7 +27,7 @@ export function ProgressSummaryCard({ userId }: { userId: string }) {
     } finally {
       setIsLoading(false);
     }
-  }, [userId]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {

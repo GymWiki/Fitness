@@ -11,7 +11,8 @@ import {
   type WeekSessionLog,
 } from '@fitness/adaptation-planner';
 import { todayLocalDateString } from './dates';
-import { supabase } from './supabase';
+import { getAllAsync, getFirstAsync, runAsync } from './db';
+import { generateId } from './id';
 
 export interface WeekReview {
   programId: string;
@@ -25,72 +26,70 @@ export interface WeekReview {
 
 /**
  * If the active program has completed a full cycle through its days since
- * the last evaluated week, builds the WeekLog/CurrentProgramState from
- * Supabase data and runs `evaluateWeek`. Returns null when no week is ready
- * yet (fewer than `daysPerWeek` new workouts logged since the last review).
+ * the last evaluated week, builds the WeekLog/CurrentProgramState from local
+ * data and runs `evaluateWeek`. Returns null when no week is ready yet
+ * (fewer than `daysPerWeek` new workouts logged since the last review).
  */
-export async function fetchWeekReview(userId: string): Promise<WeekReview | null> {
-  const { data: programRow, error: programError } = await supabase
-    .from('programs')
-    .select('id, goal, current_week_number')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .order('started_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (programError) throw programError;
+export async function fetchWeekReview(): Promise<WeekReview | null> {
+  const programRow = await getFirstAsync<{ id: string; goal: Goal; current_week_number: number }>(
+    `select id, goal, current_week_number from programs where status = 'active' order by started_at desc limit 1`,
+  );
   if (!programRow) return null;
 
-  const { data: dayRows, error: daysError } = await supabase
-    .from('program_days')
-    .select('id, day_order, name')
-    .eq('program_id', programRow.id)
-    .eq('is_active', true)
-    .order('day_order', { ascending: true });
-  if (daysError) throw daysError;
-  if (!dayRows || dayRows.length === 0) return null;
+  const dayRows = await getAllAsync<{ id: string; day_order: number; name: string }>(
+    `select id, day_order, name from program_days where program_id = ? and is_active = 1 order by day_order asc`,
+    [programRow.id],
+  );
+  if (dayRows.length === 0) return null;
 
   const daysPerWeek = dayRows.length;
   const dayIds = dayRows.map((day) => day.id);
+  const dayPlaceholders = dayIds.map(() => '?').join(',');
 
-  const { count: totalWorkoutCount, error: workoutCountError } = await supabase
-    .from('workouts')
-    .select('id', { count: 'exact', head: true })
-    .in('program_day_id', dayIds);
-  if (workoutCountError) throw workoutCountError;
-
-  const completedCycles = Math.floor((totalWorkoutCount ?? 0) / daysPerWeek);
+  const workoutCountRow = await getFirstAsync<{ count: number }>(
+    `select count(*) as count from workouts where program_day_id in (${dayPlaceholders})`,
+    dayIds,
+  );
+  const completedCycles = Math.floor((workoutCountRow?.count ?? 0) / daysPerWeek);
   if (completedCycles < programRow.current_week_number) return null; // no fresh full cycle since the last review
 
-  const { data: exerciseRows, error: exercisesError } = await supabase
-    .from('day_exercises')
-    .select('id, program_day_id, exercise_name, muscle_group, exercise_type, kind, sets, rep_range_min, rep_range_max, target_rir')
-    .in('program_day_id', dayIds);
-  if (exercisesError) throw exercisesError;
+  const exerciseRows = await getAllAsync<{
+    id: string;
+    program_day_id: string;
+    exercise_name: string;
+    muscle_group: string | null;
+    exercise_type: 'compound' | 'isolation' | null;
+    kind: 'strength' | 'cardio_duration' | 'cardio_interval';
+    sets: number | null;
+    rep_range_min: number | null;
+    rep_range_max: number | null;
+    target_rir: number | null;
+  }>(
+    `select id, program_day_id, exercise_name, muscle_group, exercise_type, kind, sets, rep_range_min, rep_range_max, target_rir
+     from day_exercises where program_day_id in (${dayPlaceholders})`,
+    dayIds,
+  );
 
-  const { data: workoutRows, error: workoutsError } = await supabase
-    .from('workouts')
-    .select('id, program_day_id, performed_at')
-    .in('program_day_id', dayIds)
-    .order('performed_at', { ascending: false })
-    .limit(daysPerWeek);
-  if (workoutsError) throw workoutsError;
-  if (!workoutRows || workoutRows.length < daysPerWeek) return null;
+  const workoutRows = await getAllAsync<{ id: string; program_day_id: string | null; performed_at: string }>(
+    `select id, program_day_id, performed_at from workouts where program_day_id in (${dayPlaceholders})
+     order by performed_at desc limit ?`,
+    [...dayIds, daysPerWeek],
+  );
+  if (workoutRows.length < daysPerWeek) return null;
 
   const workoutIds = workoutRows.map((workout) => workout.id);
-  const strengthExerciseIds = (exerciseRows ?? []).filter((exercise) => exercise.kind === 'strength').map((exercise) => exercise.id);
+  const strengthExerciseIds = exerciseRows.filter((exercise) => exercise.kind === 'strength').map((exercise) => exercise.id);
 
-  const { data: setLogRows, error: setLogsError } =
+  const setLogRows =
     strengthExerciseIds.length === 0
-      ? { data: [], error: null }
-      : await supabase
-          .from('set_logs')
-          .select('workout_id, day_exercise_id, weight_kg, reps, rir')
-          .in('workout_id', workoutIds)
-          .in('day_exercise_id', strengthExerciseIds);
-  if (setLogsError) throw setLogsError;
+      ? []
+      : await getAllAsync<{ workout_id: string; day_exercise_id: string; weight_kg: number; reps: number; rir: number }>(
+          `select workout_id, day_exercise_id, weight_kg, reps, rir from set_logs
+           where workout_id in (${workoutIds.map(() => '?').join(',')}) and day_exercise_id in (${strengthExerciseIds.map(() => '?').join(',')})`,
+          [...workoutIds, ...strengthExerciseIds],
+        );
 
-  const performedAtByWorkoutId = new Map(workoutRows.map((workout) => [workout.id, workout.performed_at as string]));
+  const performedAtByWorkoutId = new Map(workoutRows.map((workout) => [workout.id, workout.performed_at]));
   const completedDayIds = new Set(workoutRows.map((workout) => workout.program_day_id));
 
   const weekDays: WeekDayLog[] = dayRows.map((day) => ({
@@ -101,7 +100,7 @@ export async function fetchWeekReview(userId: string): Promise<WeekReview | null
 
   // Group this week's set_logs into one session per (exercise, workout).
   const sessionsByExercise = new Map<string, Map<string, WeekSessionLog>>();
-  for (const row of setLogRows ?? []) {
+  for (const row of setLogRows) {
     const performedAt = performedAtByWorkoutId.get(row.workout_id);
     if (!performedAt) continue;
     let sessionsByWorkout = sessionsByExercise.get(row.day_exercise_id);
@@ -117,12 +116,12 @@ export async function fetchWeekReview(userId: string): Promise<WeekReview | null
     session.sets.push({ weightKg: row.weight_kg, reps: row.reps, rir: row.rir });
   }
 
-  const strengthExerciseRows = (exerciseRows ?? []).filter((exercise) => exercise.kind === 'strength');
+  const strengthExerciseRows = exerciseRows.filter((exercise) => exercise.kind === 'strength');
 
   const weekExercises: WeekExerciseLog[] = strengthExerciseRows.map((exercise) => ({
     dayExerciseId: exercise.id,
     muscleGroup: exercise.muscle_group ?? 'Onbekend',
-    exerciseType: (exercise.exercise_type as 'compound' | 'isolation') ?? 'compound',
+    exerciseType: exercise.exercise_type ?? 'compound',
     currentSets: exercise.sets ?? 0,
     repRangeMin: exercise.rep_range_min ?? 0,
     repRangeMax: exercise.rep_range_max ?? 0,
@@ -133,19 +132,17 @@ export async function fetchWeekReview(userId: string): Promise<WeekReview | null
   const weekLog: WeekLog = { weekNumber: programRow.current_week_number, days: weekDays, exercises: weekExercises };
 
   // Reconstruct RecentWeekSummary[] for every week strictly before this one from the program_adjustments log.
-  const { data: adjustmentRows, error: adjustmentsError } = await supabase
-    .from('program_adjustments')
-    .select('week_number, is_deload, adjustment_type')
-    .eq('program_id', programRow.id)
-    .lt('week_number', programRow.current_week_number);
-  if (adjustmentsError) throw adjustmentsError;
+  const adjustmentRows = await getAllAsync<{ week_number: number; is_deload: number; adjustment_type: string }>(
+    `select week_number, is_deload, adjustment_type from program_adjustments where program_id = ? and week_number < ?`,
+    [programRow.id, programRow.current_week_number],
+  );
 
   const recentWeeks: RecentWeekSummary[] = [];
   for (let weekNumber = 1; weekNumber < programRow.current_week_number; weekNumber++) {
-    const rowsForWeek = (adjustmentRows ?? []).filter((row) => row.week_number === weekNumber);
+    const rowsForWeek = adjustmentRows.filter((row) => row.week_number === weekNumber);
     recentWeeks.push({
       weekNumber,
-      wasDeload: rowsForWeek.some((row) => row.is_deload),
+      wasDeload: rowsForWeek.some((row) => row.is_deload === 1),
       hasRecoverySignal: rowsForWeek.some((row) => row.adjustment_type === 'volume_decrease'),
     });
   }
@@ -162,17 +159,17 @@ export async function fetchWeekReview(userId: string): Promise<WeekReview | null
         .map((exercise) => ({
           dayExerciseId: exercise.id,
           muscleGroup: exercise.muscle_group ?? 'Onbekend',
-          exerciseType: (exercise.exercise_type as 'compound' | 'isolation') ?? 'compound',
+          exerciseType: exercise.exercise_type ?? 'compound',
           sets: exercise.sets ?? 0,
         })),
     })),
   };
 
-  const goal = programRow.goal as Goal;
+  const goal = programRow.goal;
   const adjustments = evaluateWeek(weekLog, program, goal);
 
-  const exerciseNamesById = new Map((exerciseRows ?? []).map((exercise) => [exercise.id, exercise.exercise_name as string]));
-  const dayNamesById = new Map(dayRows.map((day) => [day.id, day.name as string]));
+  const exerciseNamesById = new Map(exerciseRows.map((exercise) => [exercise.id, exercise.exercise_name]));
+  const dayNamesById = new Map(dayRows.map((day) => [day.id, day.name]));
 
   return { programId: programRow.id, weekNumber: programRow.current_week_number, goal, program, adjustments, exerciseNamesById, dayNamesById };
 }
@@ -187,39 +184,40 @@ export async function applyWeekReview(review: WeekReview, adjustments: Adjustmen
   for (const day of nextProgram.days) {
     for (const exercise of day.exercises) {
       if (originalSetsByExerciseId.get(exercise.dayExerciseId) === exercise.sets) continue;
-      const { error } = await supabase.from('day_exercises').update({ sets: exercise.sets }).eq('id', exercise.dayExerciseId);
-      if (error) throw error;
+      await runAsync('update day_exercises set sets = ? where id = ?', [exercise.sets, exercise.dayExerciseId]);
     }
   }
 
   const activeDayIds = new Set(nextProgram.days.map((day) => day.programDayId));
   const deactivatedDayIds = review.program.days.map((day) => day.programDayId).filter((id) => !activeDayIds.has(id));
-  if (deactivatedDayIds.length > 0) {
-    const { error } = await supabase.from('program_days').update({ is_active: false }).in('id', deactivatedDayIds);
-    if (error) throw error;
+  for (const dayId of deactivatedDayIds) {
+    await runAsync('update program_days set is_active = 0 where id = ?', [dayId]);
   }
 
   if (adjustments.length > 0) {
-    const { error } = await supabase.from('program_adjustments').insert(
-      adjustments.map((adjustment) => ({
-        program_id: review.programId,
-        day_exercise_id: adjustment.dayExerciseId ?? null,
-        adjustment_type: adjustment.type,
-        previous_value: adjustment.previousValue ?? null,
-        new_value: adjustment.newValue ?? null,
-        reason: adjustment.explanation,
-        week_number: review.weekNumber,
-        is_deload: adjustment.type === 'deload',
-      })),
-    );
-    if (error) throw error;
+    const now = new Date().toISOString();
+    for (const adjustment of adjustments) {
+      await runAsync(
+        `insert into program_adjustments (id, program_id, day_exercise_id, adjustment_type, previous_value, new_value, reason, effective_at, week_number, is_deload, created_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          generateId(),
+          review.programId,
+          adjustment.dayExerciseId ?? null,
+          adjustment.type,
+          adjustment.previousValue !== undefined ? JSON.stringify(adjustment.previousValue) : null,
+          adjustment.newValue !== undefined ? JSON.stringify(adjustment.newValue) : null,
+          adjustment.explanation,
+          now.slice(0, 10),
+          review.weekNumber,
+          adjustment.type === 'deload' ? 1 : 0,
+          now,
+        ],
+      );
+    }
   }
 
-  const { error: programUpdateError } = await supabase
-    .from('programs')
-    .update({ current_week_number: review.weekNumber + 1 })
-    .eq('id', review.programId);
-  if (programUpdateError) throw programUpdateError;
+  await runAsync('update programs set current_week_number = ? where id = ?', [review.weekNumber + 1, review.programId]);
 
   // Adjustments only ever change what's scheduled from tomorrow onward — a
   // day that's already passed (or is today) keeps whatever was actually
@@ -227,11 +225,8 @@ export async function applyWeekReview(review: WeekReview, adjustments: Adjustmen
   // planned/rest rows lets `ensureScheduledWindow` regenerate them the next
   // time it runs, against the now-updated program (fewer active days,
   // different set counts, etc.) instead of the stale plan from before.
-  const { error: clearScheduleError } = await supabase
-    .from('scheduled_sessions')
-    .delete()
-    .eq('program_id', review.programId)
-    .in('status', ['planned', 'rest'])
-    .gt('scheduled_date', todayLocalDateString());
-  if (clearScheduleError) throw clearScheduleError;
+  await runAsync(
+    `delete from scheduled_sessions where program_id = ? and status in ('planned', 'rest') and scheduled_date > ?`,
+    [review.programId, todayLocalDateString()],
+  );
 }
