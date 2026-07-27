@@ -1941,6 +1941,63 @@ broncode-onderzoek in plaats van visuele inspectie. Design vooraf
 vastgelegd in
 `docs/superpowers/specs/2026-07-27-week-card-schedule-design.md`.
 
+## Bugfix: kracht en cardio als één geïntegreerde weekcyclus (i.p.v. twee losse blokken)
+
+*Probleem.* `generateProgram` (`packages/program-generator/src/generate.ts`)
+bouwde `days: [...strengthDays, ...cardioDays]`: kracht-dagen kregen
+`dayOrder` 1..N, en de cardio-dagen werden er als los blok achteraan
+geplakt met `dayOrder` N+1, N+2, .... Bij bijv. 6 kracht-dagen + 2
+cardio-sessies (mixed-doel) ontstonden zo 8 `program_days`-rijen voor één
+programma — meer dan een kalenderweek aan dagen heeft. Erger: op de
+kalenderlaag (`distributeSessions` + `buildScheduleDates` in
+`@fitness/adaptation-planner`) kan een weekdag maar één `program_day_id`
+dragen (`entry.strengthDayId ?? entry.cardioSessionId`); zodra een volle
+week geen vrije dag meer overliet voor de losse cardio-dag, verloor die
+altijd van de kracht-dag op diezelfde kalenderdag en verdween de
+cardiosessie stilletjes uit de planning.
+
+*Fix (uitsluitend in `generate.ts`, geen wijziging aan de kracht-/
+cardio-engines of aan `distributeSessions`).* Nieuwe regel:
+`MAX_ACTIVE_DAYS_PER_WEEK = 6` (altijd minstens 1 volledige rustdag) en
+`HIGH_STRENGTH_FREQUENCY = 5`.
+
+- Bij 2-4 kracht-dagen/week: cardio-sessies krijgen een eigen dag zolang
+  dat binnen de 6-dagen-cap past (`Math.max(0, 6 - daysPerWeek)` sloten);
+  wat daarbuiten valt, merget alsnog.
+- Bij 5-7 kracht-dagen/week: geen losse cardio-dag meer — elke
+  cardio-sessie wordt toegevoegd aan een bestaande kracht-dag
+  (`mergeCardioIntoStrengthDays`), met `exerciseOrder` ná de laatste
+  kracht-oefening ("kort, na afloop"), en bij voorkeur op een dag die
+  geen zware beendag is (`isHeavyLowerBodyDay`, interference-regel) —
+  roteert over de niet-zware dagen als er meerdere sessies te verdelen
+  zijn.
+- Losse cardio-dagen worden niet meer achteraan geplakt maar
+  gelijkmatig tussen de kracht-dagen verdeeld (`interleaveEvenly`,
+  hetzelfde idee als "verdeel N items zo gelijkmatig mogelijk over M
+  posities"), waarna `dayOrder` één keer doorlopend 1..totaal wordt
+  herberekend. `program_days` bevat hierdoor nooit meer dan 6 rijen
+  (7 alleen wanneer de gebruiker zelf 7 kracht-dagen/week koos — al
+  eerder geaccepteerd gedrag, ongewijzigd) — geen dag 8/9 meer, en
+  daarmee verdwijnt ook de stille-cardio-bug op de kalenderlaag
+  vanzelf, omdat een gemergede sessie nooit meer een eigen
+  `program_day_id` nodig heeft die met een kracht-dag kan botsen.
+
+*Tests.* `packages/program-generator/tests/generate.test.ts`: het oude
+"cardio wordt achteraan geplakt"-scenario is vervangen door tests die
+interweaving, de 6-dagen-cap, het mergen bij hoge frequentie, de
+`exerciseOrder`-volgorde ná het krachtwerk, en de interference-voorkeur
+verifiëren; plus een matrix-test over alle 5 doelen × `daysPerWeek` 2-7
+(30 combinaties) die bevestigt dat er nooit meer dan 7 `program_days`
+ontstaan en `dayOrder` altijd gapless 1..N is.
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 243 tests slagen (37
+adaptatieplanner + 46 programmagenerator [26 in `generate.test.ts`, 10
+nieuw] + 55 progressie-engine + 105 root `src/lib`). Geen wijziging aan
+UI-code nodig: zowel de onboarding-samenvatting als
+`insertProgramStructure` lazen al `day.exercises` én
+`day.cardioSessions` per dag naast elkaar, dus een dag met beide toont
+en persisteert meteen correct.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen

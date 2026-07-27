@@ -45,19 +45,71 @@ describe('generateProgram', () => {
     expect(() => generateProgram(intake({ daysPerWeek: 8 }))).toThrow();
   });
 
-  it('builds one strength day per requested day-per-week, in order, starting at 1, with cardio days appended after', () => {
+  it('builds one strength day per requested day-per-week, and never more than 6 active days total', () => {
     const program = generateProgram(intake({ daysPerWeek: 3 }));
     const strength = strengthDays(program.days);
     expect(strength).toHaveLength(3);
-    expect(strength.map((d) => d.dayOrder)).toEqual([1, 2, 3]);
 
     const cardio = cardioDays(program.days);
     expect(cardio.length).toBeGreaterThan(0);
-    // dayOrder keeps counting up without gaps or overlap with the strength days.
-    expect(cardio.map((d) => d.dayOrder)).toEqual(cardio.map((_, i) => 4 + i));
+    expect(program.days).toHaveLength(strength.length + cardio.length);
+    expect(program.days.length).toBeLessThanOrEqual(6);
+    // dayOrder is one continuous, gap-free sequence across the whole program.
+    expect(program.days.map((d) => d.dayOrder)).toEqual(program.days.map((_, i) => i + 1));
   });
 
-  it('cycles full-body A/B days for a 2-day week, with a cardio day after them', () => {
+  it('interweaves standalone cardio days among the strength days instead of appending them all at the end', () => {
+    // fat_loss: 3 cardio sessions/week, 3 days/week strength -> all 3 fit standalone (3+3=6).
+    const program = generateProgram(intake({ goal: 'fat_loss', daysPerWeek: 3 }));
+    const cardio = cardioDays(program.days);
+    expect(cardio).toHaveLength(3);
+    // Not all bunched at the tail: at least one cardio day sits before the last strength day.
+    const lastStrengthOrder = Math.max(...strengthDays(program.days).map((d) => d.dayOrder));
+    expect(cardio.some((d) => d.dayOrder < lastStrengthOrder)).toBe(true);
+  });
+
+  it('never produces an 8th/9th program day beyond a 7-day calendar week', () => {
+    for (const goal of ['hypertrophy', 'strength', 'mixed', 'fat_loss', 'endurance'] as const) {
+      for (let daysPerWeek = 2; daysPerWeek <= 7; daysPerWeek++) {
+        const program = generateProgram(intake({ goal, daysPerWeek }));
+        expect(program.days.length).toBeLessThanOrEqual(7);
+        expect(program.days.map((d) => d.dayOrder)).toEqual(program.days.map((_, i) => i + 1));
+      }
+    }
+  });
+
+  it('merges cardio onto existing strength days instead of a standalone day at high strength frequency (5-6 days/week)', () => {
+    for (const daysPerWeek of [5, 6]) {
+      const program = generateProgram(intake({ goal: 'mixed', daysPerWeek }));
+      const standaloneCardioDays = program.days.filter((d) => d.exercises.length === 0);
+      expect(standaloneCardioDays).toHaveLength(0);
+      expect(program.days).toHaveLength(daysPerWeek);
+      const mergedCount = program.days.reduce((sum, d) => sum + d.cardioSessions.length, 0);
+      expect(mergedCount).toBeGreaterThan(0);
+    }
+  });
+
+  it('appends merged cardio after the lifting exercises on that day (correct exerciseOrder)', () => {
+    const program = generateProgram(intake({ goal: 'mixed', daysPerWeek: 6 }));
+    const dayWithMergedCardio = program.days.find((d) => d.exercises.length > 0 && d.cardioSessions.length > 0);
+    expect(dayWithMergedCardio).toBeDefined();
+    const maxExerciseOrder = Math.max(...dayWithMergedCardio!.exercises.map((e) => e.exerciseOrder));
+    for (const session of dayWithMergedCardio!.cardioSessions) {
+      expect(session.exerciseOrder).toBeGreaterThan(maxExerciseOrder);
+    }
+  });
+
+  it('prefers non-heavy-leg strength days when merging cardio in (interference rule)', () => {
+    const program = generateProgram(intake({ goal: 'mixed', daysPerWeek: 6, experienceLevel: 'intermediate' }));
+    const heavyDayNames = new Set(['Benen A', 'Benen B']);
+    for (const day of program.days) {
+      if (day.cardioSessions.length > 0 && day.exercises.length > 0) {
+        expect(heavyDayNames.has(day.name)).toBe(false);
+      }
+    }
+  });
+
+  it('cycles full-body A/B days for a 2-day week, with a standalone cardio day integrated', () => {
     const program = generateProgram(intake({ daysPerWeek: 2 }));
     expect(program.templateKey).toBe('full_body_3x');
     expect(strengthDays(program.days).map((d) => d.name)).toEqual(['Full Body A', 'Full Body B']);
