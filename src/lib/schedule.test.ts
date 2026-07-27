@@ -1,19 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockSupabase = vi.hoisted(() => ({ from: vi.fn() }));
-vi.mock('./supabase', () => ({ supabase: mockSupabase }));
+const mockDb = vi.hoisted(() => ({
+  execAsync: vi.fn(),
+  runAsync: vi.fn(),
+  getAllAsync: vi.fn(),
+  getFirstAsync: vi.fn(),
+  withTransactionAsync: vi.fn(async (fn: () => Promise<unknown>) => fn()),
+}));
+vi.mock('./db', () => mockDb);
 
-// Imported after the mock so schedule.ts's internal `import { supabase } from './supabase'` resolves to mockSupabase.
+let idCounter = 0;
+vi.mock('./id', () => ({ generateId: vi.fn(() => `id-${idCounter++}`) }));
+
+// Imported after the mocks so schedule.ts's internal `import ... from './db'`/`'./id'` resolve to the mocks above.
 const { ensureScheduledWindow, fetchScheduledSessions } = await import('./schedule');
 
 interface CallEntry {
-  op: string;
-  args: unknown[];
-}
-
-interface ResolvedChain {
-  table: string;
-  calls: CallEntry[];
+  sql: string;
+  params: unknown[];
 }
 
 interface MockConfig {
@@ -25,57 +29,48 @@ interface MockConfig {
 }
 
 /**
- * Minimal fluent mock of the supabase-js query builder (same spirit as
- * programs.test.ts/switchGoal.test.ts), extended with the read-only methods
- * `ensureScheduledWindow` chains (order/limit/maybeSingle/update/lt/upsert).
- * Every resolved chain (i.e. every awaited `.from(...)` call) is recorded in
- * `resolvedChains` with its own call list, so a test can find e.g. "the
- * chain that did an update on scheduled_sessions" and inspect exactly which
- * filters it applied, without the chains bleeding into each other.
+ * Configures the mocked `./db` primitives to answer schedule.ts's raw SQL
+ * queries by matching substrings in the SQL text (the same "dispatch on the
+ * SQL shape" approach as the old fluent-Postgrest mocks, just without the
+ * chain — every call to `runAsync`/`getAllAsync`/`getFirstAsync` is a single,
+ * directly-inspectable (sql, params) pair now).
  */
-function createMockSupabase(config: MockConfig) {
-  const resolvedChains: ResolvedChain[] = [];
+function configureDbMock(config: MockConfig) {
+  const runAsyncCalls: CallEntry[] = [];
 
-  function respond(table: string, calls: CallEntry[]): { data: unknown; error: unknown } {
-    const hasMaybeSingle = calls.some((c) => c.op === 'maybeSingle');
+  mockDb.runAsync.mockImplementation(async (sql: string, params: unknown[] = []) => {
+    runAsyncCalls.push({ sql, params });
+    return { changes: 0, lastInsertRowId: 0 };
+  });
 
-    if (table === 'profiles') {
-      return { data: { preferred_weekdays: config.preferredWeekdays }, error: null };
+  mockDb.getFirstAsync.mockImplementation(async (sql: string) => {
+    if (sql.includes('from profiles')) {
+      return { preferred_weekdays: config.preferredWeekdays ? JSON.stringify(config.preferredWeekdays) : null };
     }
-    if (table === 'programs') {
-      return { data: config.activeProgram, error: null };
+    if (sql.includes("from programs where status = 'active'")) {
+      return config.activeProgram;
     }
-    if (table === 'program_days') {
-      return { data: config.dayRows, error: null };
+    if (sql.includes('from scheduled_sessions order by scheduled_date desc')) {
+      return config.existingMaxDate ? { scheduled_date: config.existingMaxDate } : null;
     }
-    if (table === 'scheduled_sessions') {
-      const hasUpdate = calls.some((c) => c.op === 'update');
-      const hasUpsert = calls.some((c) => c.op === 'upsert');
-      if (hasUpdate) return { data: null, error: null }; // the missed-sweep
-      if (hasUpsert) return { data: null, error: null }; // the window fill
-      if (hasMaybeSingle) return { data: config.existingMaxDate ? { scheduled_date: config.existingMaxDate } : null, error: null }; // max-date lookup
-      return { data: config.scheduledSessionsSelectRows ?? [], error: null }; // fetchScheduledSessions
-    }
-    return { data: null, error: null };
-  }
+    return null;
+  });
 
-  function makeChain(table: string) {
-    const calls: CallEntry[] = [];
-    const chain: Record<string, unknown> = {};
-    for (const method of ['select', 'eq', 'order', 'limit', 'maybeSingle', 'update', 'lt', 'gte', 'lte', 'upsert']) {
-      chain[method] = (...args: unknown[]) => {
-        calls.push({ op: method, args });
-        return chain;
-      };
+  mockDb.getAllAsync.mockImplementation(async (sql: string, params: unknown[] = []) => {
+    if (sql.includes('from program_days where program_id')) {
+      return config.dayRows.map((day) => ({ id: day.id }));
     }
-    chain.then = (resolve: (value: { data: unknown; error: unknown }) => void) => {
-      resolvedChains.push({ table, calls });
-      resolve(respond(table, calls));
-    };
-    return chain;
-  }
+    if (sql.includes('from day_exercises where program_day_id')) {
+      const day = config.dayRows.find((d) => d.id === params[0]);
+      return day ? day.day_exercises : [];
+    }
+    if (sql.includes('from scheduled_sessions ss')) {
+      return config.scheduledSessionsSelectRows ?? [];
+    }
+    return [];
+  });
 
-  return { from: vi.fn(makeChain), resolvedChains };
+  return { runAsyncCalls };
 }
 
 const strengthDay = (id: string, muscleGroup = 'Borst') => ({
@@ -85,7 +80,10 @@ const strengthDay = (id: string, muscleGroup = 'Borst') => ({
 
 describe('ensureScheduledWindow', () => {
   beforeEach(() => {
-    mockSupabase.from.mockReset();
+    idCounter = 0;
+    mockDb.runAsync.mockReset();
+    mockDb.getFirstAsync.mockReset();
+    mockDb.getAllAsync.mockReset();
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 6, 20)); // a Monday
   });
@@ -95,28 +93,29 @@ describe('ensureScheduledWindow', () => {
   });
 
   it('no-ops entirely when preferred_weekdays is not set (backward compat for existing accounts)', async () => {
-    const mock = createMockSupabase({ preferredWeekdays: null, activeProgram: null, dayRows: [] });
-    mockSupabase.from.mockImplementation(mock.from);
+    const { runAsyncCalls } = configureDbMock({ preferredWeekdays: null, activeProgram: null, dayRows: [] });
 
-    await ensureScheduledWindow('user-1');
+    await ensureScheduledWindow();
 
-    expect(mock.resolvedChains.some((c) => c.table === 'programs')).toBe(false);
-    expect(mock.resolvedChains.some((c) => c.table === 'scheduled_sessions' && c.calls.some((call) => call.op === 'upsert'))).toBe(false);
+    expect(mockDb.getFirstAsync.mock.calls.some(([sql]) => (sql as string).includes('from programs'))).toBe(false);
+    expect(runAsyncCalls.some((c) => c.sql.includes('insert into scheduled_sessions'))).toBe(false);
   });
 
   it('generates a fresh 2-week window with sessions exactly on the preferred weekdays (ma/wo/vr)', async () => {
-    const mock = createMockSupabase({
+    const { runAsyncCalls } = configureDbMock({
       preferredWeekdays: [1, 3, 5], // ma/wo/vr
       activeProgram: { id: 'program-1', goal: 'mixed' },
       dayRows: [strengthDay('day-a'), strengthDay('day-b'), strengthDay('day-c')],
     });
-    mockSupabase.from.mockImplementation(mock.from);
 
-    await ensureScheduledWindow('user-1');
+    await ensureScheduledWindow();
 
-    const upsertChain = mock.resolvedChains.find((c) => c.table === 'scheduled_sessions' && c.calls.some((call) => call.op === 'upsert'))!;
-    const upsertCall = upsertChain.calls.find((call) => call.op === 'upsert')!;
-    const rows = upsertCall.args[0] as Array<{ scheduled_date: string; program_day_id: string | null; status: string }>;
+    const insertCalls = runAsyncCalls.filter((c) => c.sql.includes('insert into scheduled_sessions'));
+    const rows = insertCalls.map((c) => ({
+      scheduled_date: c.params[2] as string,
+      program_day_id: c.params[3] as string | null,
+      status: c.params[4] as string,
+    }));
 
     expect(rows).toHaveLength(14); // today + 13 days
 
@@ -134,69 +133,62 @@ describe('ensureScheduledWindow', () => {
   });
 
   it('sweeps overdue planned rows to missed before touching anything else', async () => {
-    const mock = createMockSupabase({ preferredWeekdays: null, activeProgram: null, dayRows: [] });
-    mockSupabase.from.mockImplementation(mock.from);
+    const { runAsyncCalls } = configureDbMock({ preferredWeekdays: null, activeProgram: null, dayRows: [] });
 
-    await ensureScheduledWindow('user-1');
+    await ensureScheduledWindow();
 
-    const sweepChain = mock.resolvedChains.find((c) => c.table === 'scheduled_sessions' && c.calls.some((call) => call.op === 'update'))!;
-    expect(sweepChain).toBeDefined();
-    const updateCall = sweepChain.calls.find((call) => call.op === 'update')!;
-    expect(updateCall.args[0]).toEqual({ status: 'missed' });
-    expect(sweepChain.calls).toContainEqual({ op: 'eq', args: ['status', 'planned'] });
-    expect(sweepChain.calls).toContainEqual({ op: 'lt', args: ['scheduled_date', '2026-07-20'] });
+    expect(runAsyncCalls[0]!.sql).toContain("set status = 'missed'");
+    expect(runAsyncCalls[0]!.sql).toContain("status = 'planned'");
+    expect(runAsyncCalls[0]!.sql).toContain('scheduled_date < ?');
+    expect(runAsyncCalls[0]!.params).toEqual(['2026-07-20']);
   });
 
   it('only fills the gap forward from the existing window end, never re-inserting already-scheduled dates', async () => {
-    const mock = createMockSupabase({
+    const { runAsyncCalls } = configureDbMock({
       preferredWeekdays: [1, 3, 5],
       activeProgram: { id: 'program-1', goal: 'mixed' },
       dayRows: [strengthDay('day-a'), strengthDay('day-b'), strengthDay('day-c')],
       existingMaxDate: '2026-07-25', // window already extends 5 days out
     });
-    mockSupabase.from.mockImplementation(mock.from);
 
-    await ensureScheduledWindow('user-1');
+    await ensureScheduledWindow();
 
-    const upsertChain = mock.resolvedChains.find((c) => c.table === 'scheduled_sessions' && c.calls.some((call) => call.op === 'upsert'))!;
-    const rows = upsertChain.calls.find((call) => call.op === 'upsert')!.args[0] as Array<{ scheduled_date: string }>;
-    expect(rows[0]!.scheduled_date).toBe('2026-07-26');
-    expect(rows[rows.length - 1]!.scheduled_date).toBe('2026-08-02'); // today (07-20) + 13 days
+    const insertCalls = runAsyncCalls.filter((c) => c.sql.includes('insert into scheduled_sessions'));
+    expect(insertCalls[0]!.params[2]).toBe('2026-07-26');
+    expect(insertCalls[insertCalls.length - 1]!.params[2]).toBe('2026-08-02'); // today (07-20) + 13 days
   });
 
   it('does nothing when the window is already fully generated', async () => {
-    const mock = createMockSupabase({
+    const { runAsyncCalls } = configureDbMock({
       preferredWeekdays: [1, 3, 5],
       activeProgram: { id: 'program-1', goal: 'mixed' },
       dayRows: [strengthDay('day-a'), strengthDay('day-b'), strengthDay('day-c')],
       existingMaxDate: '2026-08-02', // already covers today + 13 days
     });
-    mockSupabase.from.mockImplementation(mock.from);
 
-    await ensureScheduledWindow('user-1');
+    await ensureScheduledWindow();
 
-    expect(mock.resolvedChains.some((c) => c.table === 'scheduled_sessions' && c.calls.some((call) => call.op === 'upsert'))).toBe(false);
+    expect(runAsyncCalls.some((c) => c.sql.includes('insert into scheduled_sessions'))).toBe(false);
   });
 });
 
 describe('fetchScheduledSessions', () => {
   beforeEach(() => {
-    mockSupabase.from.mockReset();
+    mockDb.getAllAsync.mockReset();
   });
 
   it('maps rows to the ScheduledSessionRow shape, including the joined program day name/order', async () => {
-    const mock = createMockSupabase({
+    configureDbMock({
       preferredWeekdays: null,
       activeProgram: null,
       dayRows: [],
       scheduledSessionsSelectRows: [
-        { id: 'row-1', scheduled_date: '2026-07-20', status: 'planned', program_day_id: 'day-a', program_days: { day_order: 1, name: 'Full Body A' } },
-        { id: 'row-2', scheduled_date: '2026-07-21', status: 'rest', program_day_id: null, program_days: null },
+        { id: 'row-1', scheduled_date: '2026-07-20', status: 'planned', program_day_id: 'day-a', day_order: 1, day_name: 'Full Body A' },
+        { id: 'row-2', scheduled_date: '2026-07-21', status: 'rest', program_day_id: null, day_order: null, day_name: null },
       ],
     });
-    mockSupabase.from.mockImplementation(mock.from);
 
-    const rows = await fetchScheduledSessions('user-1', '2026-07-20', '2026-07-26');
+    const rows = await fetchScheduledSessions('2026-07-20', '2026-07-26');
 
     expect(rows).toEqual([
       { id: 'row-1', date: '2026-07-20', status: 'planned', programDayId: 'day-a', programDayName: 'Full Body A', programDayOrder: 1 },

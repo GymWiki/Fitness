@@ -7,7 +7,6 @@ import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
 import { ModalHeader } from '@/components/ModalHeader';
 import { adjustmentTitle } from '@/lib/adjustmentLabels';
-import { useAuth } from '@/lib/auth';
 import { colors } from '@/theme/colors';
 import { applyWeekReview, fetchWeekReview, type WeekReview } from '@/lib/weekReview';
 import { spacing } from '@/theme/spacing';
@@ -20,7 +19,6 @@ function titleFor(adjustment: Adjustment, review: WeekReview): string {
 
 export default function WeekReviewScreen() {
   const router = useRouter();
-  const { session } = useAuth();
 
   const [review, setReview] = useState<WeekReview | null>(null);
   const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(new Set());
@@ -29,15 +27,14 @@ export default function WeekReviewScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!session) return;
-    fetchWeekReview(session.user.id)
+    fetchWeekReview()
       .then((result) => {
         setReview(result);
         if (result) setSelectedIndexes(new Set(result.adjustments.map((_, index) => index)));
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Kon week-overzicht niet laden.'))
       .finally(() => setIsLoading(false));
-  }, [session]);
+  }, []);
 
   function toggle(index: number) {
     setSelectedIndexes((previous) => {
