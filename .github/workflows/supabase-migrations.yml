@@ -1,22 +1,16 @@
-name: Deploy Supabase migrations and edge functions
+name: Deploy Supabase migrations
 
-# Applies supabase/migrations/*.sql and deploys supabase/functions/* to the
-# live project whenever a merge to main changes either folder. This exists
-# because migration 0003 sat in the repo for a full session without ever
-# being applied to production — there was no automation catching that, only
-# a symptom (a schema-switch bug) far downstream. `supabase db push` is
-# idempotent: it only applies migrations not yet recorded in the remote
-# history table, so re-runs are always safe. `supabase functions deploy`
-# is likewise safe to re-run — same reasoning extended to the food-proxy
-# edge function (see PROJECT.md): its code living in the repo is worthless
-# if nothing ever ships it to Supabase, so that step is automated too
-# instead of depending on someone remembering to run the CLI by hand.
+# Applies supabase/migrations/*.sql to the live project whenever a merge to
+# main changes that folder. This exists because migration 0003 sat in the
+# repo for a full session without ever being applied to production — there
+# was no automation catching that, only a symptom (a schema-switch bug) far
+# downstream. `supabase db push` is idempotent: it only applies migrations
+# not yet recorded in the remote history table, so re-runs are always safe.
 on:
   push:
     branches: [main]
     paths:
       - "supabase/migrations/**"
-      - "supabase/functions/**"
   workflow_dispatch: {}
 
 jobs:
@@ -41,37 +35,3 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-
-      - name: Deploy edge functions
-        run: supabase functions deploy food-proxy --project-ref "$SUPABASE_PROJECT_REF"
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-
-      # Regression test for the "search returns zero results" bug: Open Food
-      # Facts silently broke the search endpoint food-proxy used to call
-      # (global 5xx on the legacy `cgi/search.pl`), which never surfaced as a
-      # deploy failure since the function itself deployed fine. This calls
-      # the *live* function with a known-good term so a future upstream
-      # break (or a regression in our own code) fails the build instead of
-      # only showing up as "no results" inside the app.
-      - name: Smoke test food search
-        run: |
-          ANON_KEY=$(supabase projects api-keys --project-ref "$SUPABASE_PROJECT_REF" -o json | jq -r '.[] | select(.name=="anon") | .api_key')
-          STATUS=$(curl -sS -o /tmp/food-search-response.json -w "%{http_code}" -X POST \
-            "https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/food-proxy" \
-            -H "Authorization: Bearer $ANON_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{"type":"search","query":"Kwark"}')
-          echo "Status: $STATUS"
-          cat /tmp/food-search-response.json
-          echo
-          PRODUCT_COUNT=$(jq '.products | length' /tmp/food-search-response.json)
-          if [ "$STATUS" != "200" ] || [ "$PRODUCT_COUNT" -lt 1 ]; then
-            echo "Food search smoke test failed (status=$STATUS, products=$PRODUCT_COUNT)"
-            exit 1
-          fi
-          echo "OK: $PRODUCT_COUNT products found for 'Kwark'"
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}

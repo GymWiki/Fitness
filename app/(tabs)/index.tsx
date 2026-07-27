@@ -2,7 +2,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Card } from '@/components/Card';
-import { NutritionSummaryCard } from '@/components/NutritionSummaryCard';
 import { ProgressSummaryCard } from '@/components/ProgressSummaryCard';
 import { ReadinessCard } from '@/components/ReadinessCard';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
@@ -17,7 +16,7 @@ import { layout } from '@/theme/layout';
 import { spacing } from '@/theme/spacing';
 import { typography } from '@/theme/typography';
 
-// Above this width the four summary cards show as a 2x2 grid instead of a single stacked column.
+// Above this width the summary cards show as a wrapping grid instead of a single stacked column.
 const WIDE_LAYOUT_BREAKPOINT = 700;
 
 export default function TodayScreen() {
@@ -85,9 +84,6 @@ export default function TodayScreen() {
       <View style={[styles.cardsGrid, isWideLayout && styles.cardsGridWide]}>
         <View style={isWideLayout ? styles.cardSlotWide : styles.cardSlotFull}>
           <TrainingTodayCard userId={session.user.id} />
-        </View>
-        <View style={isWideLayout ? styles.cardSlotWide : styles.cardSlotFull}>
-          <NutritionSummaryCard userId={session.user.id} />
         </View>
         <View style={isWideLayout ? styles.cardSlotWide : styles.cardSlotFull}>
           <ProgressSummaryCard userId={session.user.id} />

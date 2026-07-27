@@ -46,7 +46,7 @@ function StripDot({ day }: { day: WeekStripDay }) {
  * Streak line + 7-day week strip for the top of the "Vandaag" dashboard.
  * Self-fetching (own loading/error state) so a slow query here never
  * blocks the four cards below it — same "independent card" treatment as
- * `TrainingTodayCard`/`NutritionSummaryCard`/etc.
+ * `TrainingTodayCard`/`ReadinessCard`/etc.
  */
 export function WeekOverview({ userId }: { userId: string }) {
   const [streak, setStreak] = useState<number | null>(null);

@@ -1781,6 +1781,63 @@ adaptatieplanner + 25 voedingsengine + 38 programmagenerator + 55
 progressie-engine + 115 root `src/lib`), productie-`expo export --platform
 web`-bundle bouwt zonder fouten.
 
+
+**Extra (na Fase 1): SQLite-experiment teruggedraaid, terug naar Supabase
+op een nieuw project — voedingsfunctie blijft weg.** Een eerdere sessie had
+de hele Supabase-laag (Postgres, Auth, RLS, edge function) vervangen door
+een lokale SQLite-database via `expo-sqlite`, plus login en de
+voedingsfunctie volledig verwijderd. Op uitdrukkelijk verzoek is dat
+teruggedraaid: de app gebruikt weer een remote Supabase-database, met
+e-mail/wachtwoord-login zoals oorspronkelijk. De voedingsfunctie (Open Food
+Facts, barcode-scannen, macro-tracking) is bewust *niet* teruggebracht —
+dat was in dezelfde sessie als de SQLite-migratie verwijderd en blijft weg,
+op expliciet verzoek.
+
+*Uitvoering.* `git revert` van de SQLite-migratiecommit herstelde in één
+keer de volledige Supabase/auth-architectuur (client, `AuthProvider`,
+`app/(auth)/`, elke data-layer-module met `userId`-parameters, de
+offline-sync-wachtrij, alle Supabase-migraties). Daarna is de
+voedingsfunctie opnieuw verwijderd — dezelfde bestanden als de eerdere keer
+(voedingsscreens, food-lib-modules, `packages/nutrition-engine`,
+`supabase/migrations/0004_nutrition.sql`, de food-proxy edge function),
+plus een paar nu-wees geraakte onderdelen die pas zichtbaar werden na deze
+tweede verwijdering: `searchThrottle.ts` (alleen gebruikt door het
+verwijderde zoekscherm) en de `BarcodeIcon`/`SearchIcon`/`StarIcon`-iconen
+(alleen gebruikt door voedingsschermen).
+
+*Nieuw Supabase-project.* Het oorspronkelijke `Fitness`-project
+(project-ref `xafjhpztfbyhozyruarh`, zie eerdere sessies) was niet
+bereikbaar via de MCP-koppeling van deze sessie — alleen de organisatie
+`statieclub` met één ander, ongerelateerd project was gekoppeld. Er is
+daarom een nieuw project aangemaakt (`Fitness`, project-ref
+`duvqmqkilztqzrjsxtwf`, regio `eu-west-1`, gratis tier — €0/maand,
+bevestigd vóór aanmaken), en alle vier overgebleven migraties
+(`0001`/`0002`/`0003`/`0005` — `0004_nutrition.sql` bestaat niet meer) zijn
+er via `apply_migration` op toegepast. `list_tables` bevestigt alle 10
+tabellen met RLS ingeschakeld.
+
+*Niet gedaan (buiten bereik van deze sessie).* De Supabase Auth-instelling
+"Confirm email" moet uitgeschakeld staan in het nieuwe project, anders
+blijft een net geregistreerde gebruiker zonder sessie hangen tot ze een
+bevestigingslink aanklikken (zie ook de bestaande code-comment in
+`src/lib/auth.tsx`) — dat is een Auth-provider-instelling, niet iets dat via
+de gebruikte MCP-tools te zetten is. De GitHub Action-secrets
+(`SUPABASE_ACCESS_TOKEN`/`SUPABASE_PROJECT_REF`/`SUPABASE_DB_PASSWORD`) en
+eventuele Vercel-omgevingsvariabelen (`EXPO_PUBLIC_SUPABASE_URL`/
+`EXPO_PUBLIC_SUPABASE_ANON_KEY`) wijzen nog naar het oude project en moeten
+handmatig bijgewerkt worden naar het nieuwe — zie de CI/CD-sectie hieronder
+voor waar dat moet gebeuren.
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 228 tests slagen (36
+adaptatieplanner + 38 programmagenerator + 55 progressie-engine + 99 root
+`src/lib`; de voedingsengine-package en zijn tests blijven verwijderd),
+`expo export --platform web` bouwt zonder fouten tegen de echte nieuwe
+Supabase-omgevingsvariabelen. Wat niet in dit sandbox-environment
+geverifieerd kon worden: een daadwerkelijke login/registratie-rondgang
+tegen het nieuwe project (geen live device/browser beschikbaar), dus de
+"Confirm email"-instelling hierboven is niet experimenteel bevestigd, enkel
+gedocumenteerd als bekend aandachtspunt.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen
@@ -2202,7 +2259,7 @@ vermeld, hier niet aangeraakt.
 ```
 .github/
   workflows/
-    supabase-migrations.yml  Past supabase/migrations/*.sql toe + deployt supabase/functions/* op main bij wijzigingen (zie CI/CD-sectie)
+    supabase-migrations.yml  Past supabase/migrations/*.sql toe op main bij wijzigingen (zie CI/CD-sectie)
 app/                        Expo Router routes
   _layout.tsx                Root layout: Auth-/ProfileProvider + 3-weg Stack.Protected gate
   (auth)/
@@ -2210,12 +2267,11 @@ app/                        Expo Router routes
   (onboarding)/
     index.tsx                  Intake-wizard: streeffysiek, basismetingen (+BMI), voorkeuren, samenvatting
   (tabs)/
-    _layout.tsx                Tab navigator: Vandaag / Schema / Voeding / Progressie / Profiel
-    index.tsx                   "Vandaag" dashboard: streak + weekoverzicht-strip + 4 samenvattingskaarten (training/voeding/progressie/readiness)
+    _layout.tsx                Tab navigator: Vandaag / Schema / Progressie / Profiel
+    index.tsx                   "Vandaag" dashboard: streak + weekoverzicht-strip + 3 samenvattingskaarten (training/progressie/readiness)
     schema.tsx                  "Schema": dagen/oefeningen bekijken, bewerken, vervangen, herordenen, toevoegen/verwijderen
-    nutrition.tsx                "Voeding": dagoverzicht vs. calorie-/macrodoel, scannen/zoeken, recent/favorieten, dag-log
-    progress.tsx                 "Progressie": kerncijfers, per-oefening links, aanpassingstijdlijn-preview, voedingssectie
-    profile.tsx                  "Profiel": profielgegevens + lichaamsmetingen bewerken, OFF-attributie, uitloggen
+    progress.tsx                 "Progressie": kerncijfers, per-oefening links, aanpassingstijdlijn-preview
+    profile.tsx                  "Profiel": profielgegevens + lichaamsmetingen bewerken, uitloggen
   workout/
     [dayId].tsx                 Workout-invoer: StrengthLogger + CardioLogger, offline-first
   history/
@@ -2224,29 +2280,24 @@ app/                        Expo Router routes
   adjustment-history.tsx        Uitleg-geschiedenis: alle program_adjustments, per week gegroepeerd
   switch-goal.tsx                Ander streeffysiek/doel kiezen: PhysiquePicker + bevestiging, archiveert oud programma
   faq.tsx                        "Wetenschap": doorzoekbare, categoriseerbare FAQ met bronvermelding
-  food-scan.tsx                  Barcode scannen (expo-camera) -> OFF-cache-opzoeking -> FoodLogForm
-  food-search.tsx                Naam zoeken (expliciete actie, geen live type-ahead) -> FoodLogForm
   readiness.tsx                  Volledig grid van herstelringen (Readiness-kaart tikt hier naartoe) — eigen databron, sortering + tik-kaart + legenda
 src/
   components/
     SyncStatusBadge.tsx        Offline / N niet gesynchroniseerd / Gesynchroniseerd — workout + Vandaag
     Card.tsx / Button.tsx / SelectableCard.tsx / EmptyState.tsx / ProgressDots.tsx / StatTile.tsx
-                                 Designsysteem-componenten, gedeeld door alle vier de tabs + onboarding
+                                 Designsysteem-componenten, gedeeld door alle tabs + onboarding
     LineChart.tsx                Herbruikbare SVG-lijngrafiek (uit historiescherm getrokken; ook gebruikt in Profiel)
     StatBars.tsx                  Geanimeerde stat-balken voor de streeffysiek-kaarten
     PhysiquePicker.tsx            Het ene streeffysiek-keuzescherm — onboarding, profiel-edit én switch-goal delen dit
     icons.tsx                    Dependency-vrije SVG-icoonset (tab-iconen + PhysiqueSilhouette-placeholder + FlameIcon)
-    NutrientProgressBar.tsx       Gevulde-balk voortgang voor een dagtotaal (calorieën/macro) t.o.v. doel
-    FoodLogForm.tsx                Gedeeld door scan/zoeken/handmatig: hoeveelheid + macro-preview + loggen + favoriet
     RecoveryRing.tsx                Herbruikbare Apple Watch-stijl voortgangsring (SVG, stroke-dasharray/dashoffset) — puur presentational, percent + kleur als props
     MuscleRecoveryRing.tsx          Eén grid-tegel: ring + spiergroepnaam + statuslabel; optionele onPress (leeg = geneste-Pressable-val vermeden in de compacte kaart)
     RecoveryCurveChart.tsx          Illustratieve supercompensatie-curve (react-native-svg) voor de geselecteerde spiergroep — dip/piek/afvlakking + "nu"-marker, gedeelde kleurlogica met de ringen
     WeekOverview.tsx               Dashboard: streak-regel + 7-daagse weekoverzicht-strip, eigen fetch (fetchActiveProgram + fetchWorkoutDates)
-    DashboardCardShell.tsx        Gedeelde kop/laadstatus/CTA-schil voor de vier dashboardkaarten — presentational only
+    DashboardCardShell.tsx        Gedeelde kop/laadstatus/CTA-schil voor de dashboardkaarten — presentational only
     TrainingTodayCard.tsx          Dashboardkaart 1: eigen fetch (fetchActiveProgram), naam/omschrijving/aantal oefeningen + "Start workout"
-    NutritionSummaryCard.tsx       Dashboardkaart 2: eigen fetch (targets + dagtotalen + eiwit-tekortsignaal), compacte calorieënbalk
-    ProgressSummaryCard.tsx        Dashboardkaart 3: eigen fetch (fetchWeeklyVolume/fetchMonthlyWorkoutCount), twee StatTiles
-    ReadinessCard.tsx              Dashboardkaart 4: eigen fetch (fetchAllMuscleGroupRecoveryEstimates), toont de 4 meest relevante herstelringen (compact)
+    ProgressSummaryCard.tsx        Dashboardkaart 2: eigen fetch (fetchWeeklyVolume/fetchMonthlyWorkoutCount), twee StatTiles
+    ReadinessCard.tsx              Dashboardkaart 3: eigen fetch (fetchAllMuscleGroupRecoveryEstimates), toont de 4 meest relevante herstelringen (compact)
   lib/
     supabase.ts               Supabase client (AsyncStorage op native)
     auth.tsx                   AuthProvider + useAuth hook
@@ -2279,15 +2330,6 @@ src/
                                   recoveryReadinessPercent() (ringvulling) + recoveryRingLabel() + describeMuscleRecoveryTap() (tik-kaart-tekst) + compareMuscleRecoveryPriority() (sortering "klaar om te trainen" eerst)
     faqContent.ts                 FAQ_ENTRIES + searchFaqEntries() — gestructureerde, doorzoekbare FAQ-content
     faqContent.test.ts             Controleert dat elke FAQ-entry minstens één bron met geldige url/auteur/jaar heeft
-    openFoodFacts.ts / openFoodFacts.test.ts
-                                  fetchProductByBarcode() / searchProductsByName() — roept de food-proxy edge function aan, nooit OFF rechtstreeks (CORS)
-    foodProducts.ts                fetchProductWithCache() — Supabase-cache vóór elke OFF-aanroep
-    nutritionTargets.ts            computeUserNutritionTargets() — koppelt profile+laatste meting aan de pure engine
-    foodLogs.ts                    logFood (offline-wachtrij) / fetchFoodLogsForDate / fetchRecentFoodLogs / fetchRecentDailyProteinTotals / deleteFoodLog
-    foodFavorites.ts               fetchFavorites / addFavorite / removeFavorite
-    proteinSignal.ts               checkProteinShortfall() — koppelt detectProteinShortfall aan profile/doel
-    searchThrottle.ts / searchThrottle.test.ts
-                                  canSearchNow() — pure debounce-guard voor het zoekscherm
     dateWeek.ts / dateWeek.test.ts
                                   startOfIsoWeek / addDays / isSameLocalDay / isBeforeLocalDay — gedeelde datumhulp voor streak.ts + weekStrip.ts
     weekStrip.ts / weekStrip.test.ts
@@ -2333,64 +2375,56 @@ packages/
       evaluate.test.ts
       apply.test.ts
       distribute.test.ts
-  nutrition-engine/           Pure, framework-onafhankelijke calorie-/macroberekening
-    src/
-      types.ts
-      targets.ts                 calculateNutritionTargets() + per-doel config-tabellen + activiteitsmultiplier
-      proteinShortfall.ts          detectProteinShortfall()
-      scale.ts                    scaleNutrients() — per-100g -> gelogde hoeveelheid
-    tests/
-      targets.test.ts
-      proteinShortfall.test.ts
-      scale.test.ts
 supabase/
   migrations/
     0001_init.sql              Volledig Fase 1-datamodel + RLS
     0002_adaptation_planner.sql  Weekteller, is_active op program_days, week_number/is_deload + insert-policy
     0003_physique_and_measurements.sql
                                  target_physique/gender/birth_year/target_weight_kg op profiles + body_measurements-tabel
-    0004_nutrition.sql          food_products (gedeelde OFF-cache) + food_logs + food_favorites + RLS
-  functions/
-    food-proxy/index.ts        Server-side proxy naar Open Food Facts (CORS-fix) — cachet in food_products, zet User-Agent server-side
+    0005_scheduled_sessions.sql  preferred_weekdays op profiles + scheduled_sessions-tabel + RLS
 vitest.config.ts               Root-scope testrunner voor pure src/lib-modules (src/**/*.test.ts), naast de package-tests
 ```
 
-## CI/CD: migraties en edge functions automatisch toepassen
+## CI/CD: migraties automatisch toepassen
 
-`.github/workflows/supabase-migrations.yml` draait `supabase db push` én
-`supabase functions deploy food-proxy` zodra een merge naar `main`
-bestanden in `supabase/migrations/` of `supabase/functions/` wijzigt (plus
-een handmatige "Run workflow"-knop in de Actions-tab voor als je 'm meteen
-wilt draaien zonder nieuwe commit). De migratie-automatisering bestaat
+`.github/workflows/supabase-migrations.yml` draait `supabase db push`
+zodra een merge naar `main` bestanden in `supabase/migrations/` wijzigt
+(plus een handmatige "Run workflow"-knop in de Actions-tab voor als je 'm
+meteen wilt draaien zonder nieuwe commit). Deze automatisering bestaat
 specifiek omdat migratie 0003 een hele sessie lang in de repo stond zonder
 ooit toegepast te zijn — er was geen enkel automatisch signaal dat dat was
 misgegaan, alleen een bug downstream die er niets mee te maken leek te
-hebben. Dezelfde reden gold voor de edge function toevoegen: functiecode in
-de repo lost niets op als niemand hem ooit daadwerkelijk deployt. Beide
-commando's zijn idempotent (migraties: past alleen toe wat nog niet in de
-remote historie staat; functions deploy: overschrijft gewoon de vorige
-versie), dus opnieuw draaien is altijd veilig.
+hebben. `supabase db push` is idempotent (past alleen toe wat nog niet in
+de remote historie staat), dus opnieuw draaien is altijd veilig. (De
+food-proxy edge function-deploy en de bijbehorende smoke test zijn uit deze
+workflow verwijderd samen met de voedingsfunctie zelf.)
 
 **Vereist drie repository secrets** (Settings → Secrets and variables →
 Actions → "New repository secret") — die kan ik niet zelf toevoegen, dat
-moet in de GitHub-instellingen zelf:
+moet in de GitHub-instellingen zelf. Deze wijzen momenteel nog naar het
+**oude, niet langer gebruikte** project en moeten bijgewerkt worden naar
+het nieuwe project hieronder:
 
 | Secret | Waar te vinden |
 |---|---|
 | `SUPABASE_ACCESS_TOKEN` | https://supabase.com/dashboard/account/tokens — genereer een nieuwe personal access token |
-| `SUPABASE_PROJECT_REF` | Project → Settings → General → "Reference ID" (voor deze app: `xafjhpztfbyhozyruarh`) |
-| `SUPABASE_DB_PASSWORD` | Het database-wachtwoord dat je koos bij het aanmaken van het project — te resetten via Project → Settings → Database als je 'm niet meer weet |
+| `SUPABASE_PROJECT_REF` | Project → Settings → General → "Reference ID" (voor deze app nu: `duvqmqkilztqzrjsxtwf`) |
+| `SUPABASE_DB_PASSWORD` | Het database-wachtwoord van het nieuwe project — in te stellen/resetten via Project → Settings → Database |
 
-Zolang deze secrets ontbreken faalt de workflow gewoon zichtbaar in de
-Actions-tab (in plaats van stil niets te doen), dus het ergste geval is
-"geen automatische toepassing", niet "een onopgemerkte fout".
+Zolang deze secrets ontbreken of verouderd zijn faalt de workflow gewoon
+zichtbaar in de Actions-tab (in plaats van stil niets te doen), dus het
+ergste geval is "geen automatische toepassing", niet "een onopgemerkte
+fout". Dezelfde omschakeling geldt voor de Vercel-omgevingsvariabelen
+(`EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY`, Project
+Settings → Environment Variables in Vercel) — die wijzen ook nog naar het
+oude project totdat ze handmatig bijgewerkt worden.
 
 ## Hoe te draaien
 
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages + root src/lib samen (235 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (228 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```

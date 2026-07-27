@@ -17,11 +17,11 @@ interface ModalHeaderProps {
 
 /**
  * The one "title + Sluiten" header every modal/stack screen shares (workout,
- * history, week-review, adjustment-history, switch-goal, faq, food-scan,
- * food-search, readiness all had their own hand-copied version of this
- * before — nine slightly different paddingTop/fontSize numbers for the same
- * pattern). The close button gets a real `layout.minTapTarget` hit area via
- * `hitSlop`, which the copy-pasted versions didn't consistently have.
+ * history, week-review, adjustment-history, switch-goal, faq, readiness all
+ * had their own hand-copied version of this before — several slightly
+ * different paddingTop/fontSize numbers for the same pattern). The close
+ * button gets a real `layout.minTapTarget` hit area via `hitSlop`, which the
+ * copy-pasted versions didn't consistently have.
  */
 export function ModalHeader({ title, subtitle, right, onClose }: ModalHeaderProps) {
   const router = useRouter();
