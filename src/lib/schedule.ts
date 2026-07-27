@@ -16,6 +16,8 @@ export interface ScheduledSessionRow {
   programDayId: string | null;
   programDayName: string | null;
   programDayOrder: number | null;
+  /** Derived from the day's exercises — null for a rest day (no program day). */
+  programDayKind: 'strength' | 'cardio' | null;
 }
 
 interface DayExerciseForScheduling {
@@ -133,7 +135,7 @@ export async function ensureScheduledWindow(userId: string): Promise<void> {
 export async function fetchScheduledSessions(userId: string, fromDate: string, toDate: string): Promise<ScheduledSessionRow[]> {
   const { data, error } = await supabase
     .from('scheduled_sessions')
-    .select('id, scheduled_date, status, program_day_id, program_days (day_order, name)')
+    .select('id, scheduled_date, status, program_day_id, program_days (day_order, name, day_exercises (kind))')
     .eq('user_id', userId)
     .gte('scheduled_date', fromDate)
     .lte('scheduled_date', toDate)
@@ -141,7 +143,8 @@ export async function fetchScheduledSessions(userId: string, fromDate: string, t
   if (error) throw error;
 
   return (data ?? []).map((row) => {
-    const day = row.program_days as unknown as { day_order: number; name: string } | null;
+    const day = row.program_days as unknown as { day_order: number; name: string; day_exercises: Array<{ kind: string }> } | null;
+    const hasStrength = day?.day_exercises.some((exercise) => exercise.kind === 'strength') ?? false;
     return {
       id: row.id,
       date: row.scheduled_date,
@@ -149,6 +152,7 @@ export async function fetchScheduledSessions(userId: string, fromDate: string, t
       programDayId: row.program_day_id,
       programDayName: day?.name ?? null,
       programDayOrder: day?.day_order ?? null,
+      programDayKind: day ? (hasStrength ? 'strength' : 'cardio') : null,
     };
   });
 }

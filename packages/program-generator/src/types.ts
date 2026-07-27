@@ -8,12 +8,12 @@ export type EquipmentType = 'gym' | 'home_dumbbells' | 'bodyweight';
 
 export type ExerciseType = 'compound' | 'isolation';
 
-export type TemplateKey = 'full_body_3x' | 'upper_lower_4x';
+export type TemplateKey = 'full_body_3x' | 'upper_lower_4x' | 'push_pull_legs_6x';
 
 export interface IntakeAnswers {
   goal: Goal;
   experienceLevel: ExperienceLevel;
-  /** 2-6, validated by the caller against the same range as the `profiles` table check constraint. */
+  /** 2-7, validated by the caller against the same range as the `profiles` table check constraint. */
   daysPerWeek: number;
   equipment: EquipmentType;
 }

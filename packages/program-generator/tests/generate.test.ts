@@ -28,16 +28,21 @@ describe('selectTemplateKey', () => {
     expect(selectTemplateKey(3)).toBe('full_body_3x');
   });
 
-  it('picks upper/lower for 4+ days per week', () => {
+  it('picks upper/lower for 4-5 days per week', () => {
     expect(selectTemplateKey(4)).toBe('upper_lower_4x');
-    expect(selectTemplateKey(6)).toBe('upper_lower_4x');
+    expect(selectTemplateKey(5)).toBe('upper_lower_4x');
+  });
+
+  it('picks push/pull/legs for 6-7 days per week', () => {
+    expect(selectTemplateKey(6)).toBe('push_pull_legs_6x');
+    expect(selectTemplateKey(7)).toBe('push_pull_legs_6x');
   });
 });
 
 describe('generateProgram', () => {
-  it('rejects daysPerWeek outside the 2-6 range', () => {
+  it('rejects daysPerWeek outside the 2-7 range', () => {
     expect(() => generateProgram(intake({ daysPerWeek: 1 }))).toThrow();
-    expect(() => generateProgram(intake({ daysPerWeek: 7 }))).toThrow();
+    expect(() => generateProgram(intake({ daysPerWeek: 8 }))).toThrow();
   });
 
   it('builds one strength day per requested day-per-week, in order, starting at 1, with cardio days appended after', () => {
@@ -132,6 +137,33 @@ describe('generateProgram', () => {
   it('names the program with the template label and the actual requested frequency', () => {
     const program = generateProgram(intake({ daysPerWeek: 5 }));
     expect(program.name).toBe('Upper/Lower Split (5x per week)');
+  });
+
+  it('builds a full push/pull/legs cycle for a 6-day week', () => {
+    const program = generateProgram(intake({ daysPerWeek: 6, goal: 'strength' }));
+    expect(program.templateKey).toBe('push_pull_legs_6x');
+    expect(strengthDays(program.days).map((d) => d.name)).toEqual([
+      'Push A',
+      'Pull A',
+      'Benen A',
+      'Push B',
+      'Pull B',
+      'Benen B',
+    ]);
+  });
+
+  it('cycles push/pull/legs archetypes with modulo for a 7-day week, repeating Push A on day 7', () => {
+    const program = generateProgram(intake({ daysPerWeek: 7, goal: 'strength' }));
+    expect(program.templateKey).toBe('push_pull_legs_6x');
+    expect(strengthDays(program.days).map((d) => d.name)).toEqual([
+      'Push A',
+      'Pull A',
+      'Benen A',
+      'Push B',
+      'Pull B',
+      'Benen B',
+      'Push A',
+    ]);
   });
 
   describe('cardio baseline per goal (bugfix: cardio was missing from every schema, not just mixed)', () => {

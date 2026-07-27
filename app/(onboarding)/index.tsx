@@ -38,7 +38,7 @@ const GENDER_OPTIONS: Array<{ value: Gender; label: string }> = [
   { value: 'other', label: 'Anders' },
 ];
 
-const DAYS_PER_WEEK_OPTIONS = [2, 3, 4, 5, 6];
+const DAYS_PER_WEEK_OPTIONS = [2, 3, 4, 5, 6, 7];
 
 type Step = 'physique' | 'measurements' | 'preferences' | 'summary';
 const STEPS: Step[] = ['physique', 'measurements', 'preferences', 'summary'];

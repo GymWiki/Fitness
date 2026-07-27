@@ -10,11 +10,12 @@ const CARDIO_SESSION_NAME: Record<GeneratedCardioSession['sessionType'], string>
 };
 
 const MIN_DAYS_PER_WEEK = 2;
-const MAX_DAYS_PER_WEEK = 6;
+const MAX_DAYS_PER_WEEK = 7;
 
 const TEMPLATE_LABELS: Record<TemplateKey, string> = {
   full_body_3x: 'Full Body',
   upper_lower_4x: 'Upper/Lower Split',
+  push_pull_legs_6x: 'Push/Pull/Legs',
 };
 
 function buildExercise(archetype: DayArchetype, slotId: string, exerciseOrder: number, intake: IntakeAnswers): GeneratedExercise {
