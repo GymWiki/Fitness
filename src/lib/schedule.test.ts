@@ -190,7 +190,13 @@ describe('fetchScheduledSessions', () => {
       activeProgram: null,
       dayRows: [],
       scheduledSessionsSelectRows: [
-        { id: 'row-1', scheduled_date: '2026-07-20', status: 'planned', program_day_id: 'day-a', program_days: { day_order: 1, name: 'Full Body A' } },
+        {
+          id: 'row-1',
+          scheduled_date: '2026-07-20',
+          status: 'planned',
+          program_day_id: 'day-a',
+          program_days: { day_order: 1, name: 'Full Body A', day_exercises: [{ kind: 'strength' }] },
+        },
         { id: 'row-2', scheduled_date: '2026-07-21', status: 'rest', program_day_id: null, program_days: null },
       ],
     });
@@ -199,8 +205,38 @@ describe('fetchScheduledSessions', () => {
     const rows = await fetchScheduledSessions('user-1', '2026-07-20', '2026-07-26');
 
     expect(rows).toEqual([
-      { id: 'row-1', date: '2026-07-20', status: 'planned', programDayId: 'day-a', programDayName: 'Full Body A', programDayOrder: 1 },
-      { id: 'row-2', date: '2026-07-21', status: 'rest', programDayId: null, programDayName: null, programDayOrder: null },
+      {
+        id: 'row-1',
+        date: '2026-07-20',
+        status: 'planned',
+        programDayId: 'day-a',
+        programDayName: 'Full Body A',
+        programDayOrder: 1,
+        programDayKind: 'strength',
+      },
+      { id: 'row-2', date: '2026-07-21', status: 'rest', programDayId: null, programDayName: null, programDayOrder: null, programDayKind: null },
     ]);
+  });
+
+  it('derives programDayKind "cardio" for a day whose exercises are all cardio', async () => {
+    const mock = createMockSupabase({
+      preferredWeekdays: null,
+      activeProgram: null,
+      dayRows: [],
+      scheduledSessionsSelectRows: [
+        {
+          id: 'row-3',
+          scheduled_date: '2026-07-22',
+          status: 'planned',
+          program_day_id: 'day-cardio',
+          program_days: { day_order: 4, name: 'Zone 2 cardio', day_exercises: [{ kind: 'cardio_duration' }] },
+        },
+      ],
+    });
+    mockSupabase.from.mockImplementation(mock.from);
+
+    const rows = await fetchScheduledSessions('user-1', '2026-07-22', '2026-07-22');
+
+    expect(rows[0]!.programDayKind).toBe('cardio');
   });
 });

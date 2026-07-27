@@ -1878,6 +1878,69 @@ adaptatieplanner + 41 programmagenerator + 55 progressie-engine + 93 root
 vastgelegd in
 `docs/superpowers/specs/2026-07-27-seven-day-training-design.md`.
 
+**Extra (na Fase 1): weekoverzicht-cards op de Schema-pagina.** De platte
+"Komende 2 weken"-lijst bovenin Schema is vervangen door een horizontale,
+tappable kaartenrij per dag (dag+datum, type-icoon, status), met een
+alleen-lezen detailweergave per dag.
+
+*Componenten.* `WeekCardRow` (`src/components/WeekCardRow.tsx`) is
+presentational — leest `rows` van dezelfde `fetchScheduledSessions`-call
+die de Schema-pagina al deed, nu verbreed naar een week-uitgelijnd bereik
+(start van de huidige ISO-week t/m 13 dagen verder) in plaats van
+"vandaag + 13 dagen", zodat ook al-verstreken dagen van de huidige week
+zichtbaar zijn. `ScheduleDayCard` (`src/components/ScheduleDayCard.tsx`)
+is de losse kaart; `buildWeekCards` (`src/lib/scheduleCards.ts`, puur,
+getest) zet de rijen om naar precies 7 dagen per week, met dezelfde
+'rest'-fallback-conventie als `scheduleToWeekStrip` voor een dag zonder
+rij. Drie nieuwe iconen toegevoegd aan `icons.tsx`: `DumbbellIcon`,
+`HeartIcon`, `MoonIcon`.
+
+*Databehoefte die niet in de spec stond.* Tijdens het bouwen bleek de kaart
+zelf (niet alleen de detailweergave) het type sessie (kracht/cardio/rust)
+nodig te hebben voor het icoon — `ScheduledSessionRow` had dat niet.
+`fetchScheduledSessions` (`src/lib/schedule.ts`) is daarom uitgebreid met
+een afgeleid veld `programDayKind: 'strength' | 'cardio' | null`, puur een
+extra kolom in de bestaande select (`day_exercises (kind)`), geen wijziging
+aan de planningslogica.
+
+*Detailweergave.* Nieuwe modal-route `app/schedule-day/[date].tsx`
+(zelfde `ModalHeader`-patroon als de rest van de app, geregistreerd in
+`app/_layout.tsx`). De data komt uit `fetchSchedulePreview`
+(`src/lib/scheduleDayPreview.ts`), die voor een krachtdag
+`fetchProgramDayWithExercises` + `getStrengthAdvice` per oefening
+aanroept, en voor een cardiodag `computeWeeklyDistribution`/
+`adviseNextCardioType`/`adviseCardioProgression` — dezelfde
+progression-engine-functies als het workout-scherm, nu voor alle
+oefeningen van de dag tegelijk in plaats van één voor één. Rustdag krijgt
+een vaste bevestigingstekst. Primaire knop is "Start training" (gepland/
+gemist) of "Bekijk resultaat" (al gedaan); beide navigeren naar het
+bestaande `app/workout/[dayId].tsx` — er is geen apart resultaatscherm
+gebouwd, zoals in het ontwerp afgesproken.
+
+*Snap-scroll op web (afwijking van de spec-aanname).* De kaartenrij
+gebruikt `snapToInterval`/`snapToAlignment`/`decelerationRate`. Broncode-
+onderzoek van de geïnstalleerde `react-native-web`-versie
+(`node_modules/react-native-web/dist/exports/ScrollView/index.js`)
+bevestigt dat deze drie props op web genegeerd worden — RNW vertaalt
+alleen `pagingEnabled` naar CSS `scroll-snap-type`, niet
+`snapToInterval`. De rij werkt dus op web als een gewone (niet-snappende)
+horizontale scroll — functioneel correct, minder strak uitgelijnd, precies
+de fallback die de spec al voorzag. De props blijven in de code staan
+omdat ze op een eventuele native (iOS/Android) build wel het bedoelde
+snap-gedrag geven.
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 238 tests slagen (37
+adaptatieplanner + 41 programmagenerator + 55 progressie-engine + 105
+root `src/lib`, inclusief nieuwe `scheduleCards.test.ts` en
+`scheduleDayPreview.test.ts`),
+`expo export --platform web` bouwt zonder fouten. Niet geverifieerd: een
+daadwerkelijke ingelogde klik-rondgang door de kaartenrij (geen
+testaccount/browsersessie beschikbaar in dit sandbox-environment) — de
+snap-scroll-vraag is in plaats daarvan definitief beantwoord via
+broncode-onderzoek in plaats van visuele inspectie. Design vooraf
+vastgelegd in
+`docs/superpowers/specs/2026-07-27-week-card-schedule-design.md`.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen
@@ -2464,7 +2527,7 @@ oude project totdat ze handmatig bijgewerkt worden.
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages + root src/lib samen (226 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (238 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```

@@ -55,6 +55,7 @@ function RootNavigator() {
       <Stack.Protected guard={!!session && !!profile}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="workout/[dayId]" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="schedule-day/[date]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="history/[dayExerciseId]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="week-review" options={{ presentation: 'modal' }} />
         <Stack.Screen name="adjustment-history" options={{ presentation: 'modal' }} />
