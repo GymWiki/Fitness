@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { ActivityIndicator, Platform, View } from 'react-native';
+import { AuthProvider, useAuth } from '@/lib/auth';
 import { ProfileProvider, useProfile } from '@/lib/profile';
 import { colors } from '@/theme/colors';
 
@@ -36,18 +37,22 @@ function LoadingScreen() {
 }
 
 function RootNavigator() {
+  const { session, isLoading: isAuthLoading } = useAuth();
   const { profile, isLoading: isProfileLoading } = useProfile();
 
-  if (isProfileLoading) {
+  if (isAuthLoading || (session && isProfileLoading)) {
     return <LoadingScreen />;
   }
 
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
-      <Stack.Protected guard={!profile}>
+      <Stack.Protected guard={!session}>
+        <Stack.Screen name="(auth)" />
+      </Stack.Protected>
+      <Stack.Protected guard={!!session && !profile}>
         <Stack.Screen name="(onboarding)" />
       </Stack.Protected>
-      <Stack.Protected guard={!!profile}>
+      <Stack.Protected guard={!!session && !!profile}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="workout/[dayId]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="history/[dayExerciseId]" options={{ presentation: 'modal' }} />
@@ -55,6 +60,8 @@ function RootNavigator() {
         <Stack.Screen name="adjustment-history" options={{ presentation: 'modal' }} />
         <Stack.Screen name="switch-goal" options={{ presentation: 'modal' }} />
         <Stack.Screen name="faq" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="food-scan" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="food-search" options={{ presentation: 'modal' }} />
         <Stack.Screen name="readiness" options={{ presentation: 'modal' }} />
       </Stack.Protected>
     </Stack>
@@ -65,9 +72,11 @@ export default function RootLayout() {
   useDisableWebOverscrollBounce();
 
   return (
-    <ProfileProvider>
-      <StatusBar style="light" />
-      <RootNavigator />
-    </ProfileProvider>
+    <AuthProvider>
+      <ProfileProvider>
+        <StatusBar style="light" />
+        <RootNavigator />
+      </ProfileProvider>
+    </AuthProvider>
   );
 }

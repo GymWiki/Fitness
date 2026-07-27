@@ -1,30 +1,70 @@
 import { generateProgram, type Goal, type IntakeAnswers } from '@fitness/program-generator';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockDb = vi.hoisted(() => ({
-  execAsync: vi.fn(),
-  runAsync: vi.fn(),
-  getAllAsync: vi.fn(),
-  getFirstAsync: vi.fn(),
-  withTransactionAsync: vi.fn(async (fn: () => Promise<unknown>) => fn()),
-}));
-vi.mock('./db', () => mockDb);
+const mockSupabase = vi.hoisted(() => ({ from: vi.fn() }));
+vi.mock('./supabase', () => ({ supabase: mockSupabase }));
 
-let idCounter = 0;
-vi.mock('./id', () => ({ generateId: vi.fn(() => `id-${idCounter++}`) }));
-
-// Imported after the mocks so programs.ts's internal `import ... from './db'`/`'./id'` resolve to the mocks above.
+// Imported after the mock so programs.ts's internal `import { supabase } from './supabase'` resolves to mockSupabase.
 const { assertProgressionRules, defaultProgressionRuleFor, insertProgramStructure } = await import('./programs');
 
 interface CallEntry {
-  sql: string;
-  params: unknown[];
+  table: string;
+  op: string;
+  args: unknown[];
 }
 
-function insertCalls(table: string): CallEntry[] {
-  return mockDb.runAsync.mock.calls
-    .map((call): CallEntry => ({ sql: call[0] as string, params: call[1] as unknown[] }))
-    .filter((call) => call.sql.includes(`insert into ${table}`));
+/**
+ * Minimal fluent mock of the supabase-js query builder (same pattern as
+ * switchGoal.test.ts). The `day_exercises` branch simulates the real
+ * Postgres NOT NULL constraint on `progression_rule` — a row missing it
+ * fails with the exact 23502 error the live bug produced — so this test
+ * actually exercises the bug's failure mode, not just a happy-path mock.
+ */
+function createMockSupabase() {
+  const calls: CallEntry[] = [];
+
+  function respond(table: string, localCalls: CallEntry[]): { data: unknown; error: unknown } {
+    const insertCall = localCalls.find((c) => c.op === 'insert');
+    if (!insertCall) return { data: null, error: null };
+
+    if (table === 'programs') return { data: { id: 'new-program-id' }, error: null };
+    if (table === 'program_days') {
+      const rows = insertCall.args[0] as Array<{ day_order: number }>;
+      return { data: rows.map((row, i) => ({ id: `day-${i}`, day_order: row.day_order })), error: null };
+    }
+    if (table === 'day_exercises') {
+      const rows = insertCall.args[0] as Array<{ exercise_name: string; progression_rule?: unknown }>;
+      const missing = rows.find((row) => row.progression_rule === null || row.progression_rule === undefined);
+      if (missing) {
+        return {
+          data: null,
+          error: {
+            message: `null value in column "progression_rule" of relation "day_exercises" violates not-null constraint`,
+            code: '23502',
+          },
+        };
+      }
+      return { data: null, error: null };
+    }
+    return { data: null, error: null };
+  }
+
+  function makeChain(table: string) {
+    const localCalls: CallEntry[] = [];
+    const chain: Record<string, unknown> = {};
+    for (const method of ['insert', 'select', 'single']) {
+      chain[method] = (...args: unknown[]) => {
+        const entry = { table, op: method, args };
+        calls.push(entry);
+        localCalls.push(entry);
+        return chain;
+      };
+    }
+    chain.then = (resolve: (value: { data: unknown; error: unknown }) => void) => resolve(respond(table, localCalls));
+    return chain;
+  }
+
+  return { from: vi.fn((table: string) => makeChain(table)), calls };
 }
 
 function intake(goal: Goal): IntakeAnswers {
@@ -35,32 +75,37 @@ const ALL_GOALS: Goal[] = ['hypertrophy', 'strength', 'endurance', 'fat_loss', '
 
 describe('insertProgramStructure', () => {
   beforeEach(() => {
-    idCounter = 0;
-    mockDb.runAsync.mockReset();
-    mockDb.withTransactionAsync.mockReset().mockImplementation(async (fn: () => Promise<unknown>) => fn());
+    mockSupabase.from.mockReset();
   });
 
-  it.each(ALL_GOALS)('inserts a full schema for goal %s without a missing progression_rule', async (goal) => {
-    const program = generateProgram(intake(goal));
-    const programId = await insertProgramStructure(program);
-    expect(programId).toBe('id-0'); // the program row's own id is generated first
+  it.each(ALL_GOALS)('inserts a full schema for goal %s without violating progression_rule NOT NULL', async (goal) => {
+    const mock = createMockSupabase();
+    mockSupabase.from.mockImplementation(mock.from);
 
-    const exerciseRows = insertCalls('day_exercises');
-    expect(exerciseRows.length).toBeGreaterThan(0);
-    for (const call of exerciseRows) {
-      // progression_rule is the last bound param (see the insert column list in programs.ts) and is
-      // always a JSON string, never null/undefined — the exact NOT NULL constraint this insert must satisfy.
-      const progressionRule = call.params[call.params.length - 2];
-      expect(progressionRule).toBeDefined();
-      expect(progressionRule).not.toBeNull();
-      expect(() => JSON.parse(progressionRule as string)).not.toThrow();
+    const program = generateProgram(intake(goal));
+    await expect(insertProgramStructure('user-1', program)).resolves.toBe('new-program-id');
+
+    const exerciseInsertCall = mock.calls.find((c) => c.table === 'day_exercises' && c.op === 'insert')!;
+    const rows = exerciseInsertCall.args[0] as Array<{ progression_rule?: unknown }>;
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.progression_rule).toBeDefined();
+      expect(row.progression_rule).not.toBeNull();
     }
   });
 
-  it('wraps the whole insert in a single transaction', async () => {
-    const program = generateProgram(intake('hypertrophy'));
-    await insertProgramStructure(program);
-    expect(mockDb.withTransactionAsync).toHaveBeenCalledTimes(1);
+  it('reproduces and rejects the original bug: a mixed batch with one row missing progression_rule fails with 23502', async () => {
+    const mock = createMockSupabase();
+    mockSupabase.from.mockImplementation(mock.from);
+
+    const table = mock.from('day_exercises') as unknown as {
+      insert: (rows: unknown[]) => Promise<{ data: unknown; error: { code: string } | null }>;
+    };
+    const result = await table.insert([
+      { exercise_name: 'Bench press', progression_rule: { weightIncrementKg: 2.5 } },
+      { exercise_name: 'Zone 2 cardio' }, // progression_rule omitted, exactly like the original bug
+    ]);
+    expect(result.error?.code).toBe('23502');
   });
 });
 

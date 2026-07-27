@@ -7,16 +7,15 @@
  * supports. See PROJECT.md for the full verification notes.
  *
  * Category taxonomy: the original three categories ('Kracht'/'Herstel'/
- * 'Cardio') were replaced by a broader set when the FAQ grew past pure
- * training-engine topics (technique, timelines, lifestyle). All eight
- * original entries — including 'supercompensatie' and 'deload', both about
- * training/recovery programming rather than lifestyle recovery — moved to
- * 'Training & progressie', the category that groups "how does the app's
- * training logic work" questions. The 'Voeding' category (and its entries)
- * was removed along with the nutrition feature itself — see PROJECT.md.
+ * 'Cardio') were replaced by a broader six-category set when the FAQ grew
+ * past pure training-engine topics (nutrition, technique, timelines,
+ * lifestyle). All eight original entries — including 'supercompensatie'
+ * and 'deload', both about training/recovery programming rather than
+ * lifestyle recovery — moved to 'Training & progressie', the category
+ * that groups "how does the app's training logic work" questions.
  */
 
-export type FaqCategory = 'Training & progressie' | 'Uitvoering & techniek' | 'Resultaten & tijdlijn' | 'Herstel & leefstijl' | 'Overig';
+export type FaqCategory = 'Training & progressie' | 'Voeding' | 'Uitvoering & techniek' | 'Resultaten & tijdlijn' | 'Herstel & leefstijl' | 'Overig';
 
 export interface FaqSource {
   titel: string;
@@ -227,6 +226,104 @@ export const FAQ_ENTRIES: FaqEntry[] = [
         auteurs: 'Schoenfeld, Ogborn & Krieger',
         jaar: 2017,
         url: 'https://doi.org/10.1080/02640414.2016.1210197',
+      },
+    ],
+  },
+  // --- Voeding ---
+  {
+    id: 'eiwit-behoefte',
+    category: 'Voeding',
+    vraag: 'Hoeveel eiwit heb ik per dag echt nodig?',
+    antwoord:
+      'De algemene voedingsnorm van 0,8 g eiwit per kg lichaamsgewicht per dag is bedoeld voor sedentaire mensen, niet voor wie krachttraint. Voor krachttrainende mensen ligt de optimale inname aanzienlijk hoger: ruwweg 1,4-2,0 g/kg/dag ondersteunt spieropbouw en -behoud beter dan de algemene norm. Boven ongeveer 1,5-1,6 g/kg is de extra winst per gram beperkt — meer eten dan dat levert dus weinig extra spiergroei op, alleen extra calorieën.',
+    watBetekentDitInDeApp:
+      'Dit onderbouwt het eiwitdoel dat de app berekent op basis van je streeffysiek en lichaamsgewicht.',
+    bronnen: [
+      {
+        titel: 'International Society of Sports Nutrition Position Stand: protein and exercise',
+        auteurs: 'Jäger et al.',
+        jaar: 2017,
+        url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC5477153/',
+      },
+      {
+        titel: 'Synergistic Effect of Increased Total Protein Intake and Strength Training on Muscle Strength: A Dose-Response Meta-analysis',
+        auteurs: 'Tagawa et al.',
+        jaar: 2022,
+        url: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9441410/',
+      },
+    ],
+  },
+  {
+    id: 'anaboolvenster',
+    category: 'Voeding',
+    vraag: 'Moet ik voor of na de training eten? Bestaat het "anabole venster"?',
+    antwoord:
+      'Het idee dat je binnen 30-60 minuten na de training eiwit moet eten om spiergroei mis te lopen, is grotendeels een mythe. Onderzoek laat zien dat je totale eiwitinname over de hele dag veel zwaarder weegt dan het precieze tijdstip rond je training — het "venster" is eerder uren breed dan minuten. Zolang je dagtotaal klopt, maakt het dus weinig uit of je vlak voor, vlak na of pas later op de dag eet.',
+    watBetekentDitInDeApp:
+      'Daarom stuurt de app op je dagtotaal eiwit, niet op een strak tijdstip rond je training.',
+    bronnen: [
+      {
+        titel: 'Nutrient timing revisited: is there a post-exercise anabolic window?',
+        auteurs: 'Aragon & Schoenfeld',
+        jaar: 2013,
+        url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC3577439/',
+      },
+    ],
+  },
+  {
+    id: 'supplementen',
+    category: 'Voeding',
+    vraag: 'Heb ik supplementen nodig, en welke zijn onderbouwd (creatine, whey)?',
+    antwoord:
+      'De meeste supplementen zijn overbodig als je voeding al op orde is. Creatine monohydraat is een uitzondering: het is een van de best onderzochte supplementen die er zijn, aantoonbaar effectief voor kracht en spieropbouw, en veilig gebleken in langetermijnonderzoek bij gezonde mensen. Whey-eiwit is vooral een praktisch hulpmiddel om je eiwitdoel te halen — geen "magisch" supplement, maar simpelweg een makkelijke eiwitbron.',
+    watBetekentDitInDeApp:
+      'De voedingsfeature richt zich daarom op je totale inname (calorieën/eiwit), niet op supplement-aanbevelingen.',
+    bronnen: [
+      {
+        titel: 'International Society of Sports Nutrition position stand: safety and efficacy of creatine supplementation',
+        auteurs: 'Kreider et al.',
+        jaar: 2017,
+        url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC5469049/',
+      },
+    ],
+  },
+  {
+    id: 'calorietekort-overschot',
+    category: 'Voeding',
+    vraag: 'Wat is een gezond calorietekort/-overschot om aan te houden?',
+    antwoord:
+      'Voor afvallen geldt 0,5-1% van je lichaamsgewicht per week (ruwweg 500-750 kcal tekort per dag) als een breed erkend, veilig tempo dat het risico op spierverlies beperkt — sneller afvallen verhoogt de kans dat je naast vet ook spiermassa kwijtraakt. Voor spieropbouw is een klein overschot (in dezelfde orde van grootte, maar dan positief) voldoende: een groot overschot geeft vooral extra vetopslag, geen extra spiergroei.',
+    watBetekentDitInDeApp:
+      'Dit onderbouwt waarom het voedingsdoel per streeffysiek een gematigd tekort of overschot aanhoudt in plaats van een extreme waarde.',
+    bronnen: [
+      {
+        titel: 'What does a healthy, realistic rate of weight loss look like — and why does it matter?',
+        auteurs: 'Harvard Health Publishing',
+        jaar: 2026,
+        url: 'https://www.health.harvard.edu/weight-loss/what-does-a-healthy-realistic-rate-of-weight-loss-look-like-and-why-does-it-matter',
+      },
+    ],
+  },
+  {
+    id: 'alcohol-herstel',
+    category: 'Voeding',
+    vraag: 'Kan alcohol mijn herstel en resultaten beïnvloeden?',
+    antwoord:
+      'Ja — onderzoek laat zien dat alcohol na het trainen de spiereiwitsynthese (het proces waarmee spieren herstellen en groeien) meetbaar remt, zelfs als je tegelijk genoeg eiwit binnenkrijgt. Kracht en spierpijn lijken op korte termijn minder beïnvloed, maar het herstelproces op celniveau wordt aantoonbaar vertraagd.',
+    watBetekentDitInDeApp:
+      'Geen directe koppeling in de app-logica, maar wel relevant voor wie serieus aan zijn herstel-venster werkt.',
+    bronnen: [
+      {
+        titel: 'Alcohol Ingestion Impairs Maximal Post-Exercise Rates of Myofibrillar Protein Synthesis',
+        auteurs: 'Parr et al.',
+        jaar: 2014,
+        url: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3922864/',
+      },
+      {
+        titel: 'The Effects of Alcohol Consumption on Recovery Following Resistance Exercise: A Systematic Review',
+        auteurs: 'Lakicevic et al.',
+        jaar: 2019,
+        url: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7739274/',
       },
     ],
   },
@@ -480,7 +577,7 @@ export const FAQ_ENTRIES: FaqEntry[] = [
   },
 ];
 
-export const FAQ_CATEGORIES: FaqCategory[] = ['Training & progressie', 'Uitvoering & techniek', 'Resultaten & tijdlijn', 'Herstel & leefstijl', 'Overig'];
+export const FAQ_CATEGORIES: FaqCategory[] = ['Training & progressie', 'Voeding', 'Uitvoering & techniek', 'Resultaten & tijdlijn', 'Herstel & leefstijl', 'Overig'];
 
 export function searchFaqEntries(entries: FaqEntry[], query: string): FaqEntry[] {
   const normalized = query.trim().toLowerCase();

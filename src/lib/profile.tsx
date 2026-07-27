@@ -1,7 +1,8 @@
 import type { EquipmentType, ExperienceLevel, Goal } from '@fitness/program-generator';
 import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 import type { Physique } from './physique';
-import { getFirstAsync, runAsync } from './db';
+import { useAuth } from './auth';
+import { supabase } from './supabase';
 
 export type Gender = 'male' | 'female' | 'other';
 
@@ -31,7 +32,7 @@ interface ProfileRow {
   gender: Gender | null;
   birth_year: number | null;
   target_weight_kg: number | null;
-  preferred_weekdays: string | null;
+  preferred_weekdays: number[] | null;
 }
 
 function fromRow(row: ProfileRow): Profile {
@@ -46,7 +47,7 @@ function fromRow(row: ProfileRow): Profile {
     gender: row.gender,
     birthYear: row.birth_year,
     targetWeightKg: row.target_weight_kg,
-    preferredWeekdays: row.preferred_weekdays ? (JSON.parse(row.preferred_weekdays) as number[]) : null,
+    preferredWeekdays: row.preferred_weekdays,
   };
 }
 
@@ -63,68 +64,27 @@ export interface ProfileUpdate {
   preferredWeekdays?: number[] | null;
 }
 
-/** There is exactly one profile row on a device — this app has no accounts. */
-const LOCAL_PROFILE_ID = 'local';
+/** Partial update to an existing profiles row — used by the Profiel tab's edit form. */
+export async function updateProfile(userId: string, update: ProfileUpdate): Promise<void> {
+  const patch: Record<string, unknown> = {};
+  if (update.goal !== undefined) patch.goal = update.goal;
+  if (update.experienceLevel !== undefined) patch.experience_level = update.experienceLevel;
+  if (update.daysPerWeek !== undefined) patch.days_per_week = update.daysPerWeek;
+  if (update.equipment !== undefined) patch.equipment = update.equipment;
+  if (update.displayName !== undefined) patch.display_name = update.displayName;
+  if (update.targetPhysique !== undefined) patch.target_physique = update.targetPhysique;
+  if (update.gender !== undefined) patch.gender = update.gender;
+  if (update.birthYear !== undefined) patch.birth_year = update.birthYear;
+  if (update.targetWeightKg !== undefined) patch.target_weight_kg = update.targetWeightKg;
+  if (update.preferredWeekdays !== undefined) patch.preferred_weekdays = update.preferredWeekdays;
 
-async function fetchLocalProfile(): Promise<Profile | null> {
-  const row = await getFirstAsync<ProfileRow>('select * from profiles where id = ?', [LOCAL_PROFILE_ID]);
-  return row ? fromRow(row) : null;
-}
-
-/** Partial update to the local profile row — used by the Profiel tab's edit form. */
-export async function updateProfile(update: ProfileUpdate): Promise<void> {
-  const sets: string[] = [];
-  const params: Array<string | number | null> = [];
-  if (update.goal !== undefined) {
-    sets.push('goal = ?');
-    params.push(update.goal);
-  }
-  if (update.experienceLevel !== undefined) {
-    sets.push('experience_level = ?');
-    params.push(update.experienceLevel);
-  }
-  if (update.daysPerWeek !== undefined) {
-    sets.push('days_per_week = ?');
-    params.push(update.daysPerWeek);
-  }
-  if (update.equipment !== undefined) {
-    sets.push('equipment = ?');
-    params.push(update.equipment);
-  }
-  if (update.displayName !== undefined) {
-    sets.push('display_name = ?');
-    params.push(update.displayName);
-  }
-  if (update.targetPhysique !== undefined) {
-    sets.push('target_physique = ?');
-    params.push(update.targetPhysique);
-  }
-  if (update.gender !== undefined) {
-    sets.push('gender = ?');
-    params.push(update.gender);
-  }
-  if (update.birthYear !== undefined) {
-    sets.push('birth_year = ?');
-    params.push(update.birthYear);
-  }
-  if (update.targetWeightKg !== undefined) {
-    sets.push('target_weight_kg = ?');
-    params.push(update.targetWeightKg);
-  }
-  if (update.preferredWeekdays !== undefined) {
-    sets.push('preferred_weekdays = ?');
-    params.push(update.preferredWeekdays === null ? null : JSON.stringify(update.preferredWeekdays));
-  }
-  if (sets.length === 0) return;
-  sets.push('updated_at = ?');
-  params.push(new Date().toISOString());
-
-  await runAsync(`update profiles set ${sets.join(', ')} where id = ?`, [...params, LOCAL_PROFILE_ID]);
+  const { error } = await supabase.from('profiles').update(patch).eq('id', userId);
+  if (error) throw error;
 }
 
 interface ProfileContextValue {
   profile: Profile | null;
-  /** True while the local profile is being (re)loaded. */
+  /** True while the profile for the current session is being (re)loaded. */
   isLoading: boolean;
   refresh: () => Promise<void>;
 }
@@ -132,28 +92,44 @@ interface ProfileContextValue {
 const ProfileContext = createContext<ProfileContextValue | undefined>(undefined);
 
 export function ProfileProvider({ children }: PropsWithChildren) {
+  const { session } = useAuth();
+  const userId = session?.user.id ?? null;
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  async function load() {
+  async function load(uid: string) {
     setIsLoading(true);
-    try {
-      setProfile(await fetchLocalProfile());
-    } catch {
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
+    if (error) {
       // Fase 1: geen recovery-UI voor dit pad, alleen niet crashen. De intake-flow
       // laat de gebruiker het opnieuw proberen via een normale profile-insert.
       setProfile(null);
-    } finally {
-      setIsLoading(false);
+    } else {
+      setProfile(data ? fromRow(data as ProfileRow) : null);
     }
+    setIsLoading(false);
   }
 
   useEffect(() => {
-    load();
+    if (!userId) {
+      setProfile(null);
+      setIsLoading(false);
+      return;
+    }
+    load(userId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [userId]);
 
-  const value = useMemo<ProfileContextValue>(() => ({ profile, isLoading, refresh: load }), [profile, isLoading]);
+  const value = useMemo<ProfileContextValue>(
+    () => ({
+      profile,
+      isLoading,
+      refresh: async () => {
+        if (userId) await load(userId);
+      },
+    }),
+    [profile, isLoading, userId],
+  );
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;
 }

@@ -8,6 +8,7 @@ import { ProgressDots } from '@/components/ProgressDots';
 import { PhysiquePicker } from '@/components/PhysiquePicker';
 import { SelectableCard } from '@/components/SelectableCard';
 import { WeekdayPicker } from '@/components/WeekdayPicker';
+import { useAuth } from '@/lib/auth';
 import { BMI_CATEGORY_LABELS, BMI_CAVEAT, bmiCategory, calculateBmi } from '@/lib/bmi';
 import type { Gender } from '@/lib/profile';
 import { useProfile } from '@/lib/profile';
@@ -48,6 +49,7 @@ function parsePositiveFloat(value: string): number | null {
 }
 
 export default function IntakeScreen() {
+  const { session } = useAuth();
   const { refresh } = useProfile();
 
   const [stepIndex, setStepIndex] = useState(0);
@@ -112,18 +114,18 @@ export default function IntakeScreen() {
   }
 
   async function handleStart() {
-    if (!intake || !program || !physique || !parsedWeightKg || !parsedHeightCm || isSaving) return;
+    if (!intake || !program || !physique || !session || !parsedWeightKg || !parsedHeightCm || isSaving) return;
     setIsSaving(true);
     setError(null);
     try {
-      await saveGeneratedProgram(intake, program, {
+      await saveGeneratedProgram(session.user.id, intake, program, {
         targetPhysique: physique,
         gender,
         birthYear: parsedBirthYear,
         targetWeightKg: parsedTargetWeightKg,
         preferredWeekdays,
       });
-      await saveMeasurement({
+      await saveMeasurement(session.user.id, {
         weightKg: parsedWeightKg,
         heightCm: parsedHeightCm,
         bodyFatPercent: parsedBodyFatPercent,

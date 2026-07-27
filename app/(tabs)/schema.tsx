@@ -7,6 +7,7 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
 import { ChevronDownIcon, ChevronUpIcon, EditIcon, PlusIcon, SwapIcon, TrashIcon } from '@/components/icons';
+import { useAuth } from '@/lib/auth';
 import { addDaysIso } from '@fitness/adaptation-planner';
 import { todayLocalDateString } from '@/lib/dates';
 import { useProfile } from '@/lib/profile';
@@ -276,6 +277,7 @@ function DayCard({
 }
 
 export default function SchemaScreen() {
+  const { session } = useAuth();
   const { profile } = useProfile();
   const router = useRouter();
   const [program, setProgram] = useState<SchemaProgram | null>(null);
@@ -285,10 +287,11 @@ export default function SchemaScreen() {
   const [scheduleRows, setScheduleRows] = useState<ScheduledSessionRow[]>([]);
 
   const load = useCallback(async () => {
+    if (!session) return;
     setIsLoading(true);
     setError(null);
     try {
-      setProgram(await fetchSchemaProgram());
+      setProgram(await fetchSchemaProgram(session.user.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Kon je schema niet laden.');
     } finally {
@@ -296,13 +299,13 @@ export default function SchemaScreen() {
     }
 
     try {
-      await ensureScheduledWindow();
+      await ensureScheduledWindow(session.user.id);
       const today = todayLocalDateString();
-      setScheduleRows(await fetchScheduledSessions(today, addDaysIso(today, WINDOW_DAYS - 1)));
+      setScheduleRows(await fetchScheduledSessions(session.user.id, today, addDaysIso(today, WINDOW_DAYS - 1)));
     } catch {
       setScheduleRows([]); // no calendar plan available (not set up yet, or offline) — the section just doesn't render
     }
-  }, []);
+  }, [session]);
 
   useFocusEffect(
     useCallback(() => {

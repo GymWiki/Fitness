@@ -7,6 +7,7 @@ import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
 import { LineChart } from '@/components/LineChart';
 import { WeekdayPicker } from '@/components/WeekdayPicker';
+import { useAuth } from '@/lib/auth';
 import { BMI_CATEGORY_LABELS, bmiCategory, calculateBmi } from '@/lib/bmi';
 import { formatShortDate } from '@/lib/dates';
 import { fetchMeasurementHistory, saveMeasurement, type BodyMeasurement } from '@/lib/measurements';
@@ -69,7 +70,7 @@ function ProfileEditForm({ onClose }: { onClose: () => void }) {
     setIsSaving(true);
     setError(null);
     try {
-      await updateProfile({
+      await updateProfile(profile.id, {
         displayName: displayName.trim() || null,
         experienceLevel: experienceLevel!,
         daysPerWeek: daysPerWeek!,
@@ -142,6 +143,7 @@ function ProfileEditForm({ onClose }: { onClose: () => void }) {
 }
 
 function AddMeasurementForm({ latestHeightCm, onSaved, onClose }: { latestHeightCm: number | null; onSaved: () => Promise<void>; onClose: () => void }) {
+  const { session } = useAuth();
   const [weightKg, setWeightKg] = useState('');
   const [heightCm, setHeightCm] = useState(latestHeightCm ? String(latestHeightCm) : '');
   const [bodyFatPercent, setBodyFatPercent] = useState('');
@@ -153,11 +155,11 @@ function AddMeasurementForm({ latestHeightCm, onSaved, onClose }: { latestHeight
   const canSave = parsedWeightKg !== null && parsedHeightCm !== null;
 
   async function handleSave() {
-    if (!canSave) return;
+    if (!session || !canSave) return;
     setIsSaving(true);
     setError(null);
     try {
-      await saveMeasurement({
+      await saveMeasurement(session.user.id, {
         weightKg: parsedWeightKg!,
         heightCm: parsedHeightCm!,
         bodyFatPercent: bodyFatPercent.trim() === '' ? null : parsePositiveFloat(bodyFatPercent),
@@ -195,6 +197,7 @@ function AddMeasurementForm({ latestHeightCm, onSaved, onClose }: { latestHeight
 }
 
 export default function ProfileScreen() {
+  const { session, signOut } = useAuth();
   const { profile, isLoading: isProfileLoading } = useProfile();
   const { width: windowWidth } = useWindowDimensions();
   const router = useRouter();
@@ -206,21 +209,23 @@ export default function ProfileScreen() {
   const [programHistory, setProgramHistory] = useState<ProgramHistoryEntry[]>([]);
 
   const loadMeasurements = useCallback(async () => {
+    if (!session) return;
     setIsLoadingMeasurements(true);
     try {
-      setMeasurements(await fetchMeasurementHistory());
+      setMeasurements(await fetchMeasurementHistory(session.user.id));
     } finally {
       setIsLoadingMeasurements(false);
     }
-  }, []);
+  }, [session]);
 
   const loadProgramHistory = useCallback(async () => {
+    if (!session) return;
     try {
-      setProgramHistory(await fetchProgramHistory());
+      setProgramHistory(await fetchProgramHistory(session.user.id));
     } catch {
       // Non-critical section — a load failure here shouldn't block the rest of the profile screen.
     }
-  }, []);
+  }, [session]);
 
   useFocusEffect(
     useCallback(() => {
@@ -238,6 +243,7 @@ export default function ProfileScreen() {
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>Profiel</Text>
+        <Text style={styles.email}>{session?.user.email}</Text>
 
         {isProfileLoading && (
           <View style={styles.loadingRow}>
@@ -324,6 +330,16 @@ export default function ProfileScreen() {
         <Pressable style={styles.faqLinkRow} onPress={() => router.push('/faq')}>
           <Text style={styles.faqLinkText}>Wetenschap — waarom werkt dit zo?</Text>
         </Pressable>
+
+        <Text style={styles.attribution}>
+          Voedingsgegevens via Open Food Facts, een gratis en open database onder de Open Database License (ODbL).
+        </Text>
+
+        <View style={styles.signOutButtonWrap}>
+          <Button variant="danger" onPress={signOut}>
+            Uitloggen
+          </Button>
+        </View>
       </ScrollView>
     </View>
   );
@@ -350,6 +366,10 @@ const styles = StyleSheet.create({
   },
   title: {
     ...typography.display,
+  },
+  email: {
+    ...typography.bodySecondary,
+    marginBottom: spacing.md,
   },
   loadingRow: {
     marginTop: spacing.lg,
@@ -531,5 +551,16 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 14,
     fontWeight: '600',
+  },
+  attribution: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
+    marginTop: spacing.lg,
+  },
+  signOutButtonWrap: {
+    marginTop: spacing.xxl,
+    marginBottom: spacing.xxl,
   },
 });

@@ -1,8 +1,7 @@
 import { addDaysIso, buildScheduleDates, distributeSessions, type CardioSessionInput, type StrengthDayInput, type Weekday } from '@fitness/adaptation-planner';
-import { isHeavyLowerBodyDay, type Goal } from '@fitness/program-generator';
+import { isHeavyLowerBodyDay } from '@fitness/program-generator';
 import { todayLocalDateString } from './dates';
-import { getAllAsync, getFirstAsync, runAsync } from './db';
-import { generateId } from './id';
+import { supabase } from './supabase';
 
 /** Rolling window length: today plus 13 more days = 2 full weeks including today. */
 const WINDOW_DAYS = 14;
@@ -26,11 +25,12 @@ interface DayExerciseForScheduling {
 }
 
 /**
- * Regenerates the rolling ~2-week schedule for the active program. No-ops
- * entirely when `preferred_weekdays` hasn't been set (skipped onboarding
- * step) — every UI piece that reads the schedule is built to fall back to
- * the pre-existing day-count rotation when this produces nothing, so calling
- * it is always safe even then.
+ * Regenerates the rolling ~2-week schedule for a user's active program.
+ * No-ops entirely for accounts that haven't set `preferred_weekdays`
+ * (existing accounts, or anyone who skipped the onboarding step) — every UI
+ * piece that reads the schedule is built to fall back to the pre-existing
+ * day-count rotation when this produces nothing, so calling it is always
+ * safe even for those accounts.
  *
  * Idempotent and cheap to call on every dashboard/schema focus: it first
  * sweeps overdue `planned` rows to `missed` (a day that's passed without a
@@ -40,30 +40,45 @@ interface DayExerciseForScheduling {
  * calendar days between "wherever the window currently ends" and "today +
  * 2 weeks" don't have a row yet.
  */
-export async function ensureScheduledWindow(): Promise<void> {
+export async function ensureScheduledWindow(userId: string): Promise<void> {
   const today = todayLocalDateString();
 
-  await runAsync(`update scheduled_sessions set status = 'missed' where status = 'planned' and scheduled_date < ?`, [today]);
+  const { error: sweepError } = await supabase
+    .from('scheduled_sessions')
+    .update({ status: 'missed' })
+    .eq('user_id', userId)
+    .eq('status', 'planned')
+    .lt('scheduled_date', today);
+  if (sweepError) throw sweepError;
 
-  const profileRow = await getFirstAsync<{ preferred_weekdays: string | null }>('select preferred_weekdays from profiles where id = ?', ['local']);
-  const preferredWeekdays = profileRow?.preferred_weekdays ? (JSON.parse(profileRow.preferred_weekdays) as number[]) : null;
+  const { data: profileRow, error: profileError } = await supabase.from('profiles').select('preferred_weekdays').eq('id', userId).maybeSingle();
+  if (profileError) throw profileError;
+  const preferredWeekdays = (profileRow?.preferred_weekdays ?? null) as number[] | null;
   if (!preferredWeekdays || preferredWeekdays.length === 0) return;
 
-  const programRow = await getFirstAsync<{ id: string; goal: Goal }>(
-    `select id, goal from programs where status = 'active' order by started_at desc limit 1`,
-  );
+  const { data: programRow, error: programError } = await supabase
+    .from('programs')
+    .select('id, goal')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (programError) throw programError;
   if (!programRow) return;
 
-  const dayRows = await getAllAsync<{ id: string }>('select id from program_days where program_id = ? and is_active = 1', [programRow.id]);
-  if (dayRows.length === 0) return;
+  const { data: dayRows, error: daysError } = await supabase
+    .from('program_days')
+    .select('id, day_exercises (kind, exercise_type, muscle_group)')
+    .eq('program_id', programRow.id)
+    .eq('is_active', true);
+  if (daysError) throw daysError;
+  if (!dayRows || dayRows.length === 0) return;
 
   const strengthDays: StrengthDayInput[] = [];
   const cardioSessions: CardioSessionInput[] = [];
   for (const day of dayRows) {
-    const exercises = await getAllAsync<DayExerciseForScheduling>(
-      'select kind, exercise_type, muscle_group from day_exercises where program_day_id = ?',
-      [day.id],
-    );
+    const exercises = (day.day_exercises ?? []) as DayExerciseForScheduling[];
     const hasStrength = exercises.some((exercise) => exercise.kind === 'strength');
     const hasCardio = exercises.some((exercise) => exercise.kind === 'cardio_duration' || exercise.kind === 'cardio_interval');
     if (hasStrength) {
@@ -80,51 +95,60 @@ export async function ensureScheduledWindow(): Promise<void> {
   if (strengthDays.length === 0 && cardioSessions.length === 0) return;
 
   const validWeekdays = preferredWeekdays.every((weekday) => weekday >= 1 && weekday <= 7);
-  const weekPlan = distributeSessions(strengthDays, cardioSessions, programRow.goal, validWeekdays ? (preferredWeekdays as Weekday[]) : undefined);
+  const weekPlan = distributeSessions(
+    strengthDays,
+    cardioSessions,
+    programRow.goal,
+    validWeekdays ? (preferredWeekdays as Weekday[]) : undefined,
+  );
 
-  const maxRow = await getFirstAsync<{ scheduled_date: string }>('select scheduled_date from scheduled_sessions order by scheduled_date desc limit 1');
+  const { data: maxRow, error: maxError } = await supabase
+    .from('scheduled_sessions')
+    .select('scheduled_date')
+    .eq('user_id', userId)
+    .order('scheduled_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (maxError) throw maxError;
 
   const windowEnd = addDaysIso(today, WINDOW_DAYS - 1);
-  const existingMax = maxRow?.scheduled_date;
+  const existingMax = maxRow?.scheduled_date as string | undefined;
   const rangeStart = existingMax && existingMax >= today ? addDaysIso(existingMax, 1) : today;
   if (rangeStart > windowEnd) return;
 
   const plan = buildScheduleDates(weekPlan, rangeStart, windowEnd);
-  const now = new Date().toISOString();
-  for (const entry of plan) {
-    await runAsync(
-      `insert into scheduled_sessions (id, program_id, scheduled_date, program_day_id, status, created_at)
-       values (?, ?, ?, ?, ?, ?)
-       on conflict (scheduled_date) do nothing`,
-      [generateId(), programRow.id, entry.date, entry.programDayId, entry.programDayId ? 'planned' : 'rest', now],
-    );
-  }
+  const rows = plan.map((entry) => ({
+    user_id: userId,
+    program_id: programRow.id,
+    scheduled_date: entry.date,
+    program_day_id: entry.programDayId,
+    status: entry.programDayId ? ('planned' as const) : ('rest' as const),
+  }));
+
+  const { error: insertError } = await supabase.from('scheduled_sessions').upsert(rows, { onConflict: 'user_id,scheduled_date', ignoreDuplicates: true });
+  if (insertError) throw insertError;
 }
 
-/** Scheduled sessions between two dates (inclusive), oldest first — the single source both the dashboard and the schema page read from. */
-export async function fetchScheduledSessions(fromDate: string, toDate: string): Promise<ScheduledSessionRow[]> {
-  const rows = await getAllAsync<{
-    id: string;
-    scheduled_date: string;
-    status: ScheduledSessionStatus;
-    program_day_id: string | null;
-    day_order: number | null;
-    day_name: string | null;
-  }>(
-    `select ss.id, ss.scheduled_date, ss.status, ss.program_day_id, pd.day_order as day_order, pd.name as day_name
-     from scheduled_sessions ss
-     left join program_days pd on pd.id = ss.program_day_id
-     where ss.scheduled_date >= ? and ss.scheduled_date <= ?
-     order by ss.scheduled_date asc`,
-    [fromDate, toDate],
-  );
+/** Scheduled sessions for a user between two dates (inclusive), oldest first — the single source both the dashboard and the schema page read from. */
+export async function fetchScheduledSessions(userId: string, fromDate: string, toDate: string): Promise<ScheduledSessionRow[]> {
+  const { data, error } = await supabase
+    .from('scheduled_sessions')
+    .select('id, scheduled_date, status, program_day_id, program_days (day_order, name)')
+    .eq('user_id', userId)
+    .gte('scheduled_date', fromDate)
+    .lte('scheduled_date', toDate)
+    .order('scheduled_date', { ascending: true });
+  if (error) throw error;
 
-  return rows.map((row) => ({
-    id: row.id,
-    date: row.scheduled_date,
-    status: row.status,
-    programDayId: row.program_day_id,
-    programDayName: row.day_name,
-    programDayOrder: row.day_order,
-  }));
+  return (data ?? []).map((row) => {
+    const day = row.program_days as unknown as { day_order: number; name: string } | null;
+    return {
+      id: row.id,
+      date: row.scheduled_date,
+      status: row.status,
+      programDayId: row.program_day_id,
+      programDayName: day?.name ?? null,
+      programDayOrder: day?.day_order ?? null,
+    };
+  });
 }

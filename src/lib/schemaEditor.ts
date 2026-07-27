@@ -1,6 +1,5 @@
 import { assertProgressionRules } from './programs';
-import { getAllAsync, getFirstAsync, runAsync } from './db';
-import { generateId } from './id';
+import { supabase } from './supabase';
 
 export interface SchemaExercise {
   id: string;
@@ -28,40 +27,42 @@ export interface SchemaProgram {
   days: SchemaDay[];
 }
 
-/** The active program with ALL its days (active and inactive), for the Schema tab. */
-export async function fetchSchemaProgram(): Promise<SchemaProgram | null> {
-  const programRow = await getFirstAsync<{ id: string; name: string }>(
-    `select id, name from programs where status = 'active' order by started_at desc limit 1`,
-  );
+/**
+ * The active program with ALL its days (active and inactive), for the
+ * Schema tab. Unlike `fetchActiveProgram` this is not offline-cached: schema
+ * edits need to start from the freshest state, and this screen is an
+ * online-only editing surface (like week-review/onboarding), not part of the
+ * offline workout-logging path.
+ */
+export async function fetchSchemaProgram(userId: string): Promise<SchemaProgram | null> {
+  const { data: programRow, error: programError } = await supabase
+    .from('programs')
+    .select('id, name')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (programError) throw programError;
   if (!programRow) return null;
 
-  const dayRows = await getAllAsync<{ id: string; day_order: number; name: string; is_active: number }>(
-    'select id, day_order, name, is_active from program_days where program_id = ? order by day_order asc',
-    [programRow.id],
-  );
+  const { data: dayRows, error: daysError } = await supabase
+    .from('program_days')
+    .select(
+      'id, day_order, name, is_active, day_exercises (id, exercise_order, exercise_name, muscle_group, kind, sets, rep_range_min, rep_range_max, target_rir)',
+    )
+    .eq('program_id', programRow.id)
+    .order('day_order', { ascending: true });
+  if (daysError) throw daysError;
 
-  const days: SchemaDay[] = [];
-  for (const day of dayRows) {
-    const exerciseRows = await getAllAsync<{
-      id: string;
-      exercise_order: number;
-      exercise_name: string;
-      muscle_group: string | null;
-      kind: 'strength' | 'cardio_duration' | 'cardio_interval';
-      sets: number | null;
-      rep_range_min: number | null;
-      rep_range_max: number | null;
-      target_rir: number | null;
-    }>(
-      'select id, exercise_order, exercise_name, muscle_group, kind, sets, rep_range_min, rep_range_max, target_rir from day_exercises where program_day_id = ? order by exercise_order asc',
-      [day.id],
-    );
-    days.push({
-      id: day.id,
-      dayOrder: day.day_order,
-      name: day.name,
-      isActive: day.is_active === 1,
-      exercises: exerciseRows.map((exercise) => ({
+  const days: SchemaDay[] = (dayRows ?? []).map((day) => ({
+    id: day.id,
+    dayOrder: day.day_order,
+    name: day.name,
+    isActive: day.is_active,
+    exercises: [...(day.day_exercises ?? [])]
+      .sort((a, b) => a.exercise_order - b.exercise_order)
+      .map((exercise) => ({
         id: exercise.id,
         exerciseOrder: exercise.exercise_order,
         exerciseName: exercise.exercise_name,
@@ -72,8 +73,7 @@ export async function fetchSchemaProgram(): Promise<SchemaProgram | null> {
         repRangeMax: exercise.rep_range_max,
         targetRIR: exercise.target_rir,
       })),
-    });
-  }
+  }));
 
   return { id: programRow.id, name: programRow.name, days };
 }
@@ -86,23 +86,29 @@ export interface ExerciseSetsUpdate {
 }
 
 export async function updateExerciseSets(dayExerciseId: string, update: ExerciseSetsUpdate): Promise<void> {
-  await runAsync('update day_exercises set sets = ?, rep_range_min = ?, rep_range_max = ?, target_rir = ? where id = ?', [
-    update.sets,
-    update.repRangeMin,
-    update.repRangeMax,
-    update.targetRIR,
-    dayExerciseId,
-  ]);
+  const { error } = await supabase
+    .from('day_exercises')
+    .update({
+      sets: update.sets,
+      rep_range_min: update.repRangeMin,
+      rep_range_max: update.repRangeMax,
+      target_rir: update.targetRIR,
+    })
+    .eq('id', dayExerciseId);
+  if (error) throw error;
 }
 
 export async function replaceExercise(dayExerciseId: string, newExerciseName: string): Promise<void> {
-  await runAsync('update day_exercises set exercise_name = ? where id = ?', [newExerciseName, dayExerciseId]);
+  const { error } = await supabase.from('day_exercises').update({ exercise_name: newExerciseName }).eq('id', dayExerciseId);
+  if (error) throw error;
 }
 
 /** Swaps exercise_order between two exercises in the same day — the "move up/down" action. */
 export async function swapExerciseOrder(a: { id: string; exerciseOrder: number }, b: { id: string; exerciseOrder: number }): Promise<void> {
-  await runAsync('update day_exercises set exercise_order = ? where id = ?', [b.exerciseOrder, a.id]);
-  await runAsync('update day_exercises set exercise_order = ? where id = ?', [a.exerciseOrder, b.id]);
+  const { error: errorA } = await supabase.from('day_exercises').update({ exercise_order: b.exerciseOrder }).eq('id', a.id);
+  if (errorA) throw errorA;
+  const { error: errorB } = await supabase.from('day_exercises').update({ exercise_order: a.exerciseOrder }).eq('id', b.id);
+  if (errorB) throw errorB;
 }
 
 /**
@@ -111,7 +117,8 @@ export async function swapExerciseOrder(a: { id: string; exerciseOrder: number }
  * set_logs) is never lost and the planner keeps working on what remains.
  */
 export async function removeDay(dayId: string): Promise<void> {
-  await runAsync('update program_days set is_active = 0 where id = ?', [dayId]);
+  const { error } = await supabase.from('program_days').update({ is_active: false }).eq('id', dayId);
+  if (error) throw error;
 }
 
 /**
@@ -123,7 +130,8 @@ export async function removeDay(dayId: string): Promise<void> {
 export async function addDay(program: SchemaProgram, templateDayId: string): Promise<void> {
   const inactiveDays = program.days.filter((day) => !day.isActive).sort((a, b) => a.dayOrder - b.dayOrder);
   if (inactiveDays.length > 0) {
-    await runAsync('update program_days set is_active = 1 where id = ?', [inactiveDays[0]!.id]);
+    const { error } = await supabase.from('program_days').update({ is_active: true }).eq('id', inactiveDays[0]!.id);
+    if (error) throw error;
     return;
   }
 
@@ -131,18 +139,15 @@ export async function addDay(program: SchemaProgram, templateDayId: string): Pro
   if (!templateDay) throw new Error('Template day not found');
 
   const nextDayOrder = Math.max(...program.days.map((day) => day.dayOrder)) + 1;
-  const newDayId = generateId();
-  const now = new Date().toISOString();
-  await runAsync('insert into program_days (id, program_id, day_order, name, is_active, created_at) values (?, ?, ?, ?, 1, ?)', [
-    newDayId,
-    program.id,
-    nextDayOrder,
-    `Nieuwe dag (kopie van ${templateDay.name})`,
-    now,
-  ]);
+  const { data: newDay, error: dayError } = await supabase
+    .from('program_days')
+    .insert({ program_id: program.id, day_order: nextDayOrder, name: `Nieuwe dag (kopie van ${templateDay.name})` })
+    .select('id')
+    .single();
+  if (dayError) throw dayError;
 
   const exerciseRows = templateDay.exercises.map((exercise) => ({
-    program_day_id: newDayId,
+    program_day_id: newDay.id,
     exercise_order: exercise.exerciseOrder,
     exercise_name: exercise.exerciseName,
     muscle_group: exercise.muscleGroup,
@@ -152,29 +157,11 @@ export async function addDay(program: SchemaProgram, templateDayId: string): Pro
     rep_range_max: exercise.repRangeMax,
     target_rir: exercise.targetRIR,
     // The template day's own progression_rule isn't carried in SchemaExercise, so this
-    // is a fresh default rather than a copy — matches the schema default '{}', set
-    // explicitly (not omitted) so it's never missing.
+    // is a fresh default rather than a copy — matches the DB default `'{}'::jsonb`, set
+    // explicitly (not omitted) so a mixed-kind batch can never NULL-fill it out from under us.
     progression_rule: {},
   }));
   assertProgressionRules(exerciseRows);
-  for (const row of exerciseRows) {
-    await runAsync(
-      `insert into day_exercises (id, program_day_id, exercise_order, exercise_name, muscle_group, kind, sets, rep_range_min, rep_range_max, target_rir, progression_rule, created_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        generateId(),
-        row.program_day_id,
-        row.exercise_order,
-        row.exercise_name,
-        row.muscle_group,
-        row.kind,
-        row.sets,
-        row.rep_range_min,
-        row.rep_range_max,
-        row.target_rir,
-        JSON.stringify(row.progression_rule),
-        now,
-      ],
-    );
-  }
+  const { error: exercisesError } = await supabase.from('day_exercises').insert(exerciseRows);
+  if (exercisesError) throw exercisesError;
 }
