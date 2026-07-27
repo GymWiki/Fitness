@@ -132,4 +132,24 @@ describe('distributeSessions', () => {
       expect(forbiddenWeekdays).not.toContain(cardioEntry!.weekday);
     }
   });
+
+  it('stacks cardio onto an existing strength day when a 7-day week leaves no free weekday (7 training days/week)', () => {
+    const sevenDays: StrengthDayInput[] = [
+      { id: 'push-a', name: 'Push A', isHeavyLowerBody: false },
+      { id: 'pull-a', name: 'Pull A', isHeavyLowerBody: false },
+      { id: 'legs-a', name: 'Benen A', isHeavyLowerBody: true },
+      { id: 'push-b', name: 'Push B', isHeavyLowerBody: false },
+      { id: 'pull-b', name: 'Pull B', isHeavyLowerBody: false },
+      { id: 'legs-b', name: 'Benen B', isHeavyLowerBody: true },
+      { id: 'push-a-2', name: 'Push A', isHeavyLowerBody: false },
+    ];
+    const plan = distributeSessions(sevenDays, [{ id: 'zone2-1', intensity: 'low' }], 'mixed');
+
+    const strengthWeekdays = plan.filter((e) => e.strengthDayId).map((e) => e.weekday);
+    expect(new Set(strengthWeekdays)).toEqual(new Set([1, 2, 3, 4, 5, 6, 7]));
+
+    const cardioEntry = plan.find((e) => e.cardioSessionId === 'zone2-1');
+    expect(cardioEntry).toBeDefined();
+    expect(cardioEntry!.strengthDayId).toBeDefined();
+  });
 });

@@ -1838,6 +1838,46 @@ tegen het nieuwe project (geen live device/browser beschikbaar), dus de
 "Confirm email"-instelling hierboven is niet experimenteel bevestigd, enkel
 gedocumenteerd als bekend aandachtspunt.
 
+**Extra (na Fase 1): 7 dagen per week trainen.** De dagen-per-week-limiet
+stond op 2-6; op verzoek is dat opgetrokken naar 2-7, mét een nieuw
+schema-type voor hoge frequentie in plaats van het bestaande upper/lower-
+schema simpelweg te herhalen.
+
+*Cap verhoogd op drie plekken.* `DAYS_PER_WEEK_OPTIONS` in de onboarding-
+intake (`app/(onboarding)/index.tsx`) en het profiel (`app/(tabs)/
+profile.tsx`) loopt nu tot 7 (bestaande `flexWrap` op de knoppenrij ving de
+extra knop op zonder verdere UI-wijziging). `MIN/MAX_DAYS_PER_WEEK` in
+`packages/program-generator/src/generate.ts` is 2-7. De check-constraint
+`profiles.days_per_week` is via migratie `0006_seven_day_training.sql`
+opgetrokken van `between 2 and 6` naar `between 2 and 7` en toegepast op het
+live project (`duvqmqkilztqzrjsxtwf`).
+
+*Nieuw Push/Pull/Legs-schema voor 6-7 dagen/week.* In plaats van het
+upper/lower-schema een derde keer te laten doorcyclen, krijgt 6 en 7
+dagen/week een nieuw `push_pull_legs_6x`-template, opgebouwd uit bestaande
+oefening-slots: Push (horizontalPush/verticalPush/triceps/core), Pull
+(horizontalPull/verticalPull/biceps/core), Benen (squat/hinge/
+quadIsolation/hamstringIsolation/calf) — elk in A/B-variant, 6 archetypes
+totaal. Bij 6 dagen een nette dubbele PPL-cyclus; bij 7 dagen herhaalt dag 7
+gewoon Push A (dezelfde cyclische modulo-logica als de andere templates
+al gebruiken), zonder spier-overlap met dag 6 (Benen B). Dit verandert het
+schema voor bestaande 6-dagen-gebruikers (was upper/lower, is nu PPL) — een
+bewuste keuze, niet een neveneffect.
+
+*Weekplanning bij een volle week.* `distributeSessions`
+(`@fitness/adaptation-planner`) ondersteunde 7 kracht-dagen al zonder
+wijziging. Bij 7 trainingsdagen is er geen kracht-vrije dag meer over voor
+een aparte cardiosessie — de bestaande fallback-keten plaatst die cardio
+dan op een dag die al een krachtsessie heeft, in plaats van een aparte
+dag. Dit stapel-gedrag is een bewuste keuze (geaccepteerd i.p.v.
+"verplicht minstens 1 rustdag"), geen bug.
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 226 tests slagen (37
+adaptatieplanner + 41 programmagenerator + 55 progressie-engine + 93 root
+`src/lib`), `expo export --platform web` bouwt zonder fouten. Design vooraf
+vastgelegd in
+`docs/superpowers/specs/2026-07-27-seven-day-training-design.md`.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen
@@ -2424,7 +2464,7 @@ oude project totdat ze handmatig bijgewerkt worden.
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages + root src/lib samen (228 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (226 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```

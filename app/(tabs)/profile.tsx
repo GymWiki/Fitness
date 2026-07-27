@@ -32,7 +32,7 @@ const EQUIPMENT_OPTIONS: Array<{ value: EquipmentType; label: string }> = [
   { value: 'bodyweight', label: 'Eigen lichaamsgewicht' },
 ];
 
-const DAYS_PER_WEEK_OPTIONS = [2, 3, 4, 5, 6];
+const DAYS_PER_WEEK_OPTIONS = [2, 3, 4, 5, 6, 7];
 
 const WEEKDAY_LABELS: Record<number, string> = { 1: 'ma', 2: 'di', 3: 'wo', 4: 'do', 5: 'vr', 6: 'za', 7: 'zo' };
 
