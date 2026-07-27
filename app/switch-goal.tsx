@@ -6,6 +6,7 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { ModalHeader } from '@/components/ModalHeader';
 import { PhysiquePicker } from '@/components/PhysiquePicker';
+import { useAuth } from '@/lib/auth';
 import { describeError } from '@/lib/describeError';
 import { GOAL_LABELS, goalForPhysique, type Physique } from '@/lib/physique';
 import { useProfile } from '@/lib/profile';
@@ -15,6 +16,7 @@ import { spacing } from '@/theme/spacing';
 
 export default function SwitchGoalScreen() {
   const router = useRouter();
+  const { session } = useAuth();
   const { profile, refresh } = useProfile();
   const currentPhysique = profile?.targetPhysique ?? null;
 
@@ -30,11 +32,11 @@ export default function SwitchGoalScreen() {
   }
 
   async function handleConfirm() {
-    if (!profile || !selected || !hasChanged) return;
+    if (!session || !profile || !selected || !hasChanged) return;
     setIsSwitching(true);
     setError(null);
     try {
-      await switchGoal(profile, selected);
+      await switchGoal(session.user.id, profile, selected);
       await refresh();
       router.back();
     } catch (err) {

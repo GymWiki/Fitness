@@ -7,8 +7,8 @@
  * supports. See PROJECT.md for the full verification notes.
  *
  * Category taxonomy: the original three categories ('Kracht'/'Herstel'/
- * 'Cardio') were replaced by a broader set when the FAQ grew past pure
- * training-engine topics (technique, timelines, lifestyle). All eight
+ * 'Cardio') were replaced by a broader category set when the FAQ grew past
+ * pure training-engine topics (technique, timelines, lifestyle). All eight
  * original entries — including 'supercompensatie' and 'deload', both about
  * training/recovery programming rather than lifestyle recovery — moved to
  * 'Training & progressie', the category that groups "how does the app's

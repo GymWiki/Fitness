@@ -5,6 +5,7 @@ import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
 import { LineChart } from '@/components/LineChart';
 import { ModalHeader } from '@/components/ModalHeader';
+import { useAuth } from '@/lib/auth';
 import { formatShortDate } from '@/lib/dates';
 import { fetchCardioHistory, fetchExerciseHistory, type CardioHistoryEntry, type HistorySession } from '@/lib/history';
 import { colors } from '@/theme/colors';
@@ -91,6 +92,7 @@ function CardioHistory({ history, chartWidth }: { history: CardioHistoryEntry[];
 
 export default function ExerciseHistoryScreen() {
   const params = useLocalSearchParams<{ dayExerciseId: string; exerciseName?: string; kind?: string }>();
+  const { session } = useAuth();
   const dayExerciseId = typeof params.dayExerciseId === 'string' ? params.dayExerciseId : undefined;
   const exerciseName = typeof params.exerciseName === 'string' ? params.exerciseName : undefined;
   const isCardio = params.kind === 'cardio_duration' || params.kind === 'cardio_interval';
@@ -114,16 +116,16 @@ export default function ExerciseHistoryScreen() {
         .finally(() => setIsLoading(false));
       return;
     }
-    if (!exerciseName) {
+    if (!session || !exerciseName) {
       setError('Geen oefening opgegeven.');
       setIsLoading(false);
       return;
     }
-    fetchExerciseHistory(exerciseName)
+    fetchExerciseHistory(session.user.id, exerciseName)
       .then(setStrengthHistory)
       .catch((err) => setError(err instanceof Error ? err.message : 'Kon historie niet laden.'))
       .finally(() => setIsLoading(false));
-  }, [dayExerciseId, exerciseName, isCardio]);
+  }, [dayExerciseId, exerciseName, isCardio, session]);
 
   const chartWidth = Math.min(windowWidth - 80, 480);
   const hasHistory = isCardio ? cardioHistory.length > 0 : strengthHistory.length > 0;

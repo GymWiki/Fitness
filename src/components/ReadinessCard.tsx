@@ -13,7 +13,7 @@ import { MuscleRecoveryRing } from './MuscleRecoveryRing';
 const COMPACT_RING_COUNT = 4;
 const COMPACT_RING_SIZE = 44;
 
-export function ReadinessCard() {
+export function ReadinessCard({ userId }: { userId: string }) {
   const router = useRouter();
   const [estimates, setEstimates] = useState<Map<string, RecoveryEstimate> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -23,13 +23,13 @@ export function ReadinessCard() {
     setIsLoading(true);
     setError(null);
     try {
-      setEstimates(await fetchAllMuscleGroupRecoveryEstimates());
+      setEstimates(await fetchAllMuscleGroupRecoveryEstimates(userId));
     } catch {
       setError('Kon je herstelstatus niet laden.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [userId]);
 
   useFocusEffect(
     useCallback(() => {

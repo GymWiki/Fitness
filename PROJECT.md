@@ -1782,94 +1782,61 @@ progressie-engine + 115 root `src/lib`), productie-`expo export --platform
 web`-bundle bouwt zonder fouten.
 
 
-**Extra (na Fase 1): volledig offline — SQLite i.p.v. Supabase, geen accounts
-meer.** Op expliciet verzoek ("ik wil een sqlite database die dus per device
-verschilt. Zo is de app volledig offline") is de hele Supabase-laag
-(Postgres, Auth, RLS, edge function, migratiepipeline) vervangen door een
-lokale, per-toestel SQLite-database via `expo-sqlite`. Twee vervolgkeuzes
-van de gebruiker maakten de scope groter dan alleen de databaselaag:
-"verwijder login" (geen account-/sessieconcept meer, de app opent direct in
-onboarding of de hoofd-app) en "fresh db an remove the food part" (geen
-migratie van bestaande Supabase-data — elk toestel begint leeg — én de hele
-voedingsfunctie, inclusief barcode-scannen/zoeken/Open Food Facts, is
-volledig verwijderd, niet alleen ontkoppeld).
+**Extra (na Fase 1): SQLite-experiment teruggedraaid, terug naar Supabase
+op een nieuw project — voedingsfunctie blijft weg.** Een eerdere sessie had
+de hele Supabase-laag (Postgres, Auth, RLS, edge function) vervangen door
+een lokale SQLite-database via `expo-sqlite`, plus login en de
+voedingsfunctie volledig verwijderd. Op uitdrukkelijk verzoek is dat
+teruggedraaid: de app gebruikt weer een remote Supabase-database, met
+e-mail/wachtwoord-login zoals oorspronkelijk. De voedingsfunctie (Open Food
+Facts, barcode-scannen, macro-tracking) is bewust *niet* teruggebracht —
+dat was in dezelfde sessie als de SQLite-migratie verwijderd en blijft weg,
+op expliciet verzoek.
 
-*Architectuurkeuzes:*
-- **Geen generieke Postgrest-achtige query-builder-shim.** De bestaande
-  geneste `.select()`-vormen (bv. `program_days (id, day_order, name,
-  day_exercises (...))`) zouden toch per query met de hand uitgeschreven
-  moeten worden binnen zo'n abstractielaag — die zou dus geen echt werk
-  besparen. Elk `src/lib`-bestand is in plaats daarvan direct herschreven
-  naar handgeschreven SQL via de primitieven in het nieuwe `src/lib/db.ts`
-  (`runAsync`/`getAllAsync`/`getFirstAsync`/`withTransactionAsync`), met
-  dezelfde geëxporteerde functienamen en retourvormen als voorheen zodat
-  aanroepers minimaal hoefden te wijzigen (alleen de argumentenlijst, zonder
-  `userId`).
-- **`userId` overal weggehaald, niet vervangen door een constante
-  toestel-lokale waarde.** Architecturaal eerlijker dan een vestigiaal
-  altijd-hetzelfde filter laten staan — de prijs is dat vrijwel elk
-  aanroeppunt is aangeraakt, maar dat gold toch al gezien de omvang van deze
-  wijziging.
-- **`useAuth()`/`AuthProvider`/`app/(auth)/` volledig verwijderd**, niet
-  vormbehoudend geshimd zoals de databaselaag (die wél een dunne, mockbare
-  grens behoudt voor testbaarheid). Auth heeft geen sessieconcept meer nodig
-  zodra er nergens meer een `userId` bestaat, dus volledige verwijdering is
-  hier de eenvoudigste correcte keuze. `app/_layout.tsx`'s 3-weg
-  auth/onboarding/tabs-`Stack.Protected`-gate is een 2-weg
-  onboarding/tabs-gate geworden.
-- **Echte SQLite-transacties** — in tegenstelling tot de oude supabase-js
-  client (die `insertProgramStructure`'s multi-tabel-insert nooit in een
-  echte transactie kon wrappen, een expliciet gedocumenteerde beperking uit
-  een eerdere sessie) ondersteunt `expo-sqlite` dit wél. `insertProgramStructure`
-  loopt nu volledig binnen `withTransactionAsync`, een concrete
-  correctheidsverbetering die is meegenomen in de herschrijving.
-- **JSON-kolommen als TEXT.** SQLite heeft geen los `jsonb`-type; velden als
-  `progression_rule`, `cardio_config`, `previous_value`/`new_value` en
-  `preferred_weekdays` worden nu expliciet `JSON.stringify`/`JSON.parse`'d
-  op de grens van `db.ts`'s consumenten — voorheen automatisch via Postgres'
-  `jsonb` + supabase-js.
-- **Versiebeheerde schema-migraties via `PRAGMA user_version`** in `db.ts`,
-  dezelfde genummerde-migratie-discipline voortzettend als de oude
-  `supabase/migrations/0001-0005` (nu vervangen door één ingebouwde
-  migratielijst, klaar om met een tweede entry uit te breiden zodra het
-  schema ooit wijzigt).
-- **De hele offline-sync-wachtrij-architectuur is verwijderd**
-  (`offlineQueue.ts`, `offlineCache.ts`, `useSyncStatus.ts`,
-  `SyncStatusBadge`-component) — die bestond specifiek voor een
-  netwerk-eerst-met-terugval-model tegen een remote backend, en is
-  betekenisloos zodra elke lees/schrijf-actie instant lokaal is. Workout-
-  writes (`createWorkout`/`logSet`/`logCardio`) gaan nu via een nieuw,
-  simpel `src/lib/workouts.ts` dat rechtstreeks naar SQLite schrijft, zonder
-  wachtrij of retry-logica.
+*Uitvoering.* `git revert` van de SQLite-migratiecommit herstelde in één
+keer de volledige Supabase/auth-architectuur (client, `AuthProvider`,
+`app/(auth)/`, elke data-layer-module met `userId`-parameters, de
+offline-sync-wachtrij, alle Supabase-migraties). Daarna is de
+voedingsfunctie opnieuw verwijderd — dezelfde bestanden als de eerdere keer
+(voedingsscreens, food-lib-modules, `packages/nutrition-engine`,
+`supabase/migrations/0004_nutrition.sql`, de food-proxy edge function),
+plus een paar nu-wees geraakte onderdelen die pas zichtbaar werden na deze
+tweede verwijdering: `searchThrottle.ts` (alleen gebruikt door het
+verwijderde zoekscherm) en de `BarcodeIcon`/`SearchIcon`/`StarIcon`-iconen
+(alleen gebruikt door voedingsschermen).
 
-*Web-ondersteuning (aanname, niet expliciet bevestigd).* De vraag of de
-Vercel-webbuild ook lokale SQLite-data nodig had is twee keer gesteld maar
-nooit direct beantwoord — er is doorgewerkt op de aanname dat web hetzelfde
-volledig-offline gedrag moet hebben als native, met als kanttekening dat
-dit heroverwogen moet worden als het ooit een concreet probleem blijkt.
-`expo-sqlite` op web draait op wa-sqlite (WebAssembly) en heeft twee dingen
-nodig om te werken: `.wasm` als bundelbare asset-extensie (toegevoegd aan
-`metro.config.js`) en de HTTP-headers `Cross-Origin-Opener-Policy:
-same-origin` + `Cross-Origin-Embedder-Policy: require-corp` (nodig voor
-`SharedArrayBuffer`/OPFS-persistentie), gezet via Metro-middleware voor de
-dev-server en via een nieuw `vercel.json` voor productie. Omdat zowel
-Supabase als Open Food Facts nu weg zijn, heeft de web-app sowieso geen
-externe netwerkaanroepen meer over — dat verkleint het risico dat de
-COEP-header ooit iets cross-origin breekt, want er is niets cross-origin
-meer over om te breken.
+*Nieuw Supabase-project.* Het oorspronkelijke `Fitness`-project
+(project-ref `xafjhpztfbyhozyruarh`, zie eerdere sessies) was niet
+bereikbaar via de MCP-koppeling van deze sessie — alleen de organisatie
+`statieclub` met één ander, ongerelateerd project was gekoppeld. Er is
+daarom een nieuw project aangemaakt (`Fitness`, project-ref
+`duvqmqkilztqzrjsxtwf`, regio `eu-west-1`, gratis tier — €0/maand,
+bevestigd vóór aanmaken), en alle vier overgebleven migraties
+(`0001`/`0002`/`0003`/`0005` — `0004_nutrition.sql` bestaat niet meer) zijn
+er via `apply_migration` op toegepast. `list_tables` bevestigt alle 10
+tabellen met RLS ingeschakeld.
+
+*Niet gedaan (buiten bereik van deze sessie).* De Supabase Auth-instelling
+"Confirm email" moet uitgeschakeld staan in het nieuwe project, anders
+blijft een net geregistreerde gebruiker zonder sessie hangen tot ze een
+bevestigingslink aanklikken (zie ook de bestaande code-comment in
+`src/lib/auth.tsx`) — dat is een Auth-provider-instelling, niet iets dat via
+de gebruikte MCP-tools te zetten is. De GitHub Action-secrets
+(`SUPABASE_ACCESS_TOKEN`/`SUPABASE_PROJECT_REF`/`SUPABASE_DB_PASSWORD`) en
+eventuele Vercel-omgevingsvariabelen (`EXPO_PUBLIC_SUPABASE_URL`/
+`EXPO_PUBLIC_SUPABASE_ANON_KEY`) wijzen nog naar het oude project en moeten
+handmatig bijgewerkt worden naar het nieuwe — zie de CI/CD-sectie hieronder
+voor waar dat moet gebeuren.
 
 *Verificatie.* `npx tsc --noEmit` clean, alle 228 tests slagen (36
 adaptatieplanner + 38 programmagenerator + 55 progressie-engine + 99 root
-`src/lib`; de voedingsengine-package en zijn 25 tests zijn samen met de
-feature verwijderd), `expo export --platform web` bouwt zonder fouten — en
-de bundel-output bevestigt concreet dat de wasm-asset-registratie werkt:
-`wa-sqlite.wasm` (621KB) staat in de geëxporteerde assets-lijst. Wat in dit
-sandbox-environment niet geverifieerd kon worden: er is geen live device/
-browser beschikbaar om de app daadwerkelijk te starten en een echte
-lees/schrijf-rondgang tegen de SQLite-database te doen — alleen
-build-tijd-checks (typecheck, unit tests, bundelen) zijn hier mogelijk,
-dezelfde beperking die eerdere sessies ook al noteerden bij het ontbreken
-van een live backend/toestel.
+`src/lib`; de voedingsengine-package en zijn tests blijven verwijderd),
+`expo export --platform web` bouwt zonder fouten tegen de echte nieuwe
+Supabase-omgevingsvariabelen. Wat niet in dit sandbox-environment
+geverifieerd kon worden: een daadwerkelijke login/registratie-rondgang
+tegen het nieuwe project (geen live device/browser beschikbaar), dus de
+"Confirm email"-instelling hierboven is niet experimenteel bevestigd, enkel
+gedocumenteerd als bekend aandachtspunt.
 
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
@@ -2290,8 +2257,13 @@ vermeld, hier niet aangeraakt.
 ## Projectstructuur
 
 ```
+.github/
+  workflows/
+    supabase-migrations.yml  Past supabase/migrations/*.sql toe op main bij wijzigingen (zie CI/CD-sectie)
 app/                        Expo Router routes
-  _layout.tsx                Root layout: ProfileProvider + 2-weg onboarding/tabs Stack.Protected gate (geen auth-gate meer)
+  _layout.tsx                Root layout: Auth-/ProfileProvider + 3-weg Stack.Protected gate
+  (auth)/
+    index.tsx                 Login/registreren (e-mail + wachtwoord, één scherm met toggle)
   (onboarding)/
     index.tsx                  Intake-wizard: streeffysiek, basismetingen (+BMI), voorkeuren, samenvatting
   (tabs)/
@@ -2299,9 +2271,9 @@ app/                        Expo Router routes
     index.tsx                   "Vandaag" dashboard: streak + weekoverzicht-strip + 3 samenvattingskaarten (training/progressie/readiness)
     schema.tsx                  "Schema": dagen/oefeningen bekijken, bewerken, vervangen, herordenen, toevoegen/verwijderen
     progress.tsx                 "Progressie": kerncijfers, per-oefening links, aanpassingstijdlijn-preview
-    profile.tsx                  "Profiel": profielgegevens + lichaamsmetingen bewerken
+    profile.tsx                  "Profiel": profielgegevens + lichaamsmetingen bewerken, uitloggen
   workout/
-    [dayId].tsx                 Workout-invoer: StrengthLogger + CardioLogger, directe SQLite-writes
+    [dayId].tsx                 Workout-invoer: StrengthLogger + CardioLogger, offline-first
   history/
     [dayExerciseId].tsx         Historie per oefening (kracht of cardio): lijngrafiek(en) + lijst per sessie
   week-review.tsx               Week-overzicht: voorgestelde aanpassingen aan-/uitvinken en bevestigen
@@ -2311,6 +2283,7 @@ app/                        Expo Router routes
   readiness.tsx                  Volledig grid van herstelringen (Readiness-kaart tikt hier naartoe) — eigen databron, sortering + tik-kaart + legenda
 src/
   components/
+    SyncStatusBadge.tsx        Offline / N niet gesynchroniseerd / Gesynchroniseerd — workout + Vandaag
     Card.tsx / Button.tsx / SelectableCard.tsx / EmptyState.tsx / ProgressDots.tsx / StatTile.tsx
                                  Designsysteem-componenten, gedeeld door alle tabs + onboarding
     LineChart.tsx                Herbruikbare SVG-lijngrafiek (uit historiescherm getrokken; ook gebruikt in Profiel)
@@ -2326,21 +2299,24 @@ src/
     ProgressSummaryCard.tsx        Dashboardkaart 2: eigen fetch (fetchWeeklyVolume/fetchMonthlyWorkoutCount), twee StatTiles
     ReadinessCard.tsx              Dashboardkaart 3: eigen fetch (fetchAllMuscleGroupRecoveryEstimates), toont de 4 meest relevante herstelringen (compact)
   lib/
-    db.ts                       expo-sqlite verbinding + PRAGMA user_version-migratierunner + dunne async-primitieven (runAsync/getAllAsync/getFirstAsync/withTransactionAsync) — enige plek die expo-sqlite importeert, zodat elk ander bestand mockbaar blijft in tests
-    id.ts                       generateId() — client-side UUID's voor elke insert (SQLite genereert zelf geen id's)
-    profile.tsx                ProfileProvider + useProfile hook + updateProfile() (enige, lokale profiles-rij, id 'local')
+    supabase.ts               Supabase client (AsyncStorage op native)
+    auth.tsx                   AuthProvider + useAuth hook
+    profile.tsx                ProfileProvider + useProfile hook + updateProfile() (profiles-rij van huidige user)
     physique.ts                 PHYSIQUE_OPTIONS + goalForPhysique() + GOAL_LABELS — enige plek voor streeffysiek→doel
     physiqueStats.ts             PHYSIQUE_STATS — presentatie-only trainingsprofiel-stats per streeffysiek
     bmi.ts                       calculateBmi() / bmiCategory() — pure berekening, nooit opgeslagen
     measurements.ts              saveMeasurement() / fetchMeasurementHistory() — body_measurements-tijdreeks
-    programs.ts                saveGeneratedProgram / insertProgramStructure (in één SQLite-transactie) / fetchActiveProgram / fetchProgramDayWithExercises / fetchProgramHistory
-    workouts.ts                  createWorkout() / logSet() / logCardio() — directe SQLite-writes, vervangt de oude offline-wachtrij
+    programs.ts                saveGeneratedProgram / insertProgramStructure / fetchActiveProgram / fetchProgramDayWithExercises / fetchProgramHistory
     switchGoal.ts                 switchGoal() — nieuw programma invoegen, oude archiveren, profiel + adjustment-log bijwerken
     schemaEditor.ts              fetchSchemaProgram + updateExerciseSets/replaceExercise/swapExerciseOrder/addDay/removeDay
     progressStats.ts             fetchWeeklyVolume / fetchMonthlyWorkoutCount / fetchLongestStreak / fetchWorkoutDates
+    offlineQueue.ts             FIFO sync-wachtrij (AsyncStorage), idempotente upserts, subscribeToQueue
+    offlineCache.ts              fetchWithCache() — network-first leescache, fallback bij netwerkfout
+    useSyncStatus.ts             Hook: wachtrijlengte (live) + NetInfo online/offline
+    id.ts                       generateId() — client-side UUID's voor offline-veilige writes
     history.ts                  fetchExerciseHistory() (per oefeningsnaam, over alle programma's) + fetchCardioHistory()
     exerciseHistoryMerge.ts       groupSetLogsIntoSessions() — pure, geteste groepeerlogica achter fetchExerciseHistory
-    describeError.ts              Zet een thrown Error om in een leesbare message, i.p.v. een generieke fallback
+    describeError.ts              Zet een Postgrest/Error-object om in message + hint + code, i.p.v. een generieke fallback
     exerciseHistoryMerge.test.ts  Bewijst: logs overleven een schemawissel + de kracht-engine pakt ze op
     weekReview.ts                fetchWeekReview() / applyWeekReview() — databrug naar @fitness/adaptation-planner
     adjustmentHistory.ts         fetchAdjustmentHistory() — alle program_adjustments van het actieve programma
@@ -2354,8 +2330,6 @@ src/
                                   recoveryReadinessPercent() (ringvulling) + recoveryRingLabel() + describeMuscleRecoveryTap() (tik-kaart-tekst) + compareMuscleRecoveryPriority() (sortering "klaar om te trainen" eerst)
     faqContent.ts                 FAQ_ENTRIES + searchFaqEntries() — gestructureerde, doorzoekbare FAQ-content
     faqContent.test.ts             Controleert dat elke FAQ-entry minstens één bron met geldige url/auteur/jaar heeft
-    searchThrottle.ts / searchThrottle.test.ts
-                                  canSearchNow() — pure debounce-guard voor het zoekscherm
     dateWeek.ts / dateWeek.test.ts
                                   startOfIsoWeek / addDays / isSameLocalDay / isBeforeLocalDay — gedeelde datumhulp voor streak.ts + weekStrip.ts
     weekStrip.ts / weekStrip.test.ts
@@ -2401,22 +2375,60 @@ packages/
       evaluate.test.ts
       apply.test.ts
       distribute.test.ts
-metro.config.js                wasm als bundelbare asset-extensie + COOP/COEP-headers op de dev-server (nodig voor expo-sqlite op web)
-vercel.json                     COOP/COEP-headers op de productie-hosting (zelfde reden als metro.config.js)
+supabase/
+  migrations/
+    0001_init.sql              Volledig Fase 1-datamodel + RLS
+    0002_adaptation_planner.sql  Weekteller, is_active op program_days, week_number/is_deload + insert-policy
+    0003_physique_and_measurements.sql
+                                 target_physique/gender/birth_year/target_weight_kg op profiles + body_measurements-tabel
+    0005_scheduled_sessions.sql  preferred_weekdays op profiles + scheduled_sessions-tabel + RLS
 vitest.config.ts               Root-scope testrunner voor pure src/lib-modules (src/**/*.test.ts), naast de package-tests
 ```
+
+## CI/CD: migraties automatisch toepassen
+
+`.github/workflows/supabase-migrations.yml` draait `supabase db push`
+zodra een merge naar `main` bestanden in `supabase/migrations/` wijzigt
+(plus een handmatige "Run workflow"-knop in de Actions-tab voor als je 'm
+meteen wilt draaien zonder nieuwe commit). Deze automatisering bestaat
+specifiek omdat migratie 0003 een hele sessie lang in de repo stond zonder
+ooit toegepast te zijn — er was geen enkel automatisch signaal dat dat was
+misgegaan, alleen een bug downstream die er niets mee te maken leek te
+hebben. `supabase db push` is idempotent (past alleen toe wat nog niet in
+de remote historie staat), dus opnieuw draaien is altijd veilig. (De
+food-proxy edge function-deploy en de bijbehorende smoke test zijn uit deze
+workflow verwijderd samen met de voedingsfunctie zelf.)
+
+**Vereist drie repository secrets** (Settings → Secrets and variables →
+Actions → "New repository secret") — die kan ik niet zelf toevoegen, dat
+moet in de GitHub-instellingen zelf. Deze wijzen momenteel nog naar het
+**oude, niet langer gebruikte** project en moeten bijgewerkt worden naar
+het nieuwe project hieronder:
+
+| Secret | Waar te vinden |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | https://supabase.com/dashboard/account/tokens — genereer een nieuwe personal access token |
+| `SUPABASE_PROJECT_REF` | Project → Settings → General → "Reference ID" (voor deze app nu: `duvqmqkilztqzrjsxtwf`) |
+| `SUPABASE_DB_PASSWORD` | Het database-wachtwoord van het nieuwe project — in te stellen/resetten via Project → Settings → Database |
+
+Zolang deze secrets ontbreken of verouderd zijn faalt de workflow gewoon
+zichtbaar in de Actions-tab (in plaats van stil niets te doen), dus het
+ergste geval is "geen automatische toepassing", niet "een onopgemerkte
+fout". Dezelfde omschakeling geldt voor de Vercel-omgevingsvariabelen
+(`EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY`, Project
+Settings → Environment Variables in Vercel) — die wijzen ook nog naar het
+oude project totdat ze handmatig bijgewerkt worden.
 
 ## Hoe te draaien
 
 ```bash
 npm install
+cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
 npm run test           # unit tests, alle packages + root src/lib samen (228 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```
 
-Geen `.env` of externe service meer nodig — de app heeft geen backend, geen
-account en geen netwerkafhankelijkheid voor haar kerndata. De SQLite-
-database wordt bij eerste gebruik lokaal aangemaakt op het toestel (of in de
-browser via OPFS op web) en verschilt dus per installatie/toestel, precies
-zoals gevraagd.
+Zonder een geldig Supabase-project in `.env` start de auth-flow niet (de
+Supabase-client gooit bewust een duidelijke foutmelding bij het opstarten in
+plaats van stil te falen).

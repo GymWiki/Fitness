@@ -7,6 +7,7 @@ import { ChevronRightIcon } from '@/components/icons';
 import { StatTile } from '@/components/StatTile';
 import { adjustmentTitle } from '@/lib/adjustmentLabels';
 import { fetchAdjustmentHistory, type AdjustmentHistoryEntry } from '@/lib/adjustmentHistory';
+import { useAuth } from '@/lib/auth';
 import { formatShortDate } from '@/lib/dates';
 import { fetchActiveProgram, type ActiveProgram } from '@/lib/programs';
 import { fetchLongestStreak, fetchMonthlyWorkoutCount, fetchWeeklyVolume } from '@/lib/progressStats';
@@ -18,6 +19,7 @@ import { typography } from '@/theme/typography';
 const ADJUSTMENT_PREVIEW_COUNT = 3;
 
 export default function ProgressScreen() {
+  const { session } = useAuth();
   const router = useRouter();
 
   const [program, setProgram] = useState<ActiveProgram | null>(null);
@@ -29,14 +31,16 @@ export default function ProgressScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!session) return;
     setIsLoading(true);
     setError(null);
+    const userId = session.user.id;
     const results = await Promise.allSettled([
-      fetchActiveProgram(),
-      fetchWeeklyVolume(),
-      fetchMonthlyWorkoutCount(),
-      fetchLongestStreak(),
-      fetchAdjustmentHistory(),
+      fetchActiveProgram(userId),
+      fetchWeeklyVolume(userId),
+      fetchMonthlyWorkoutCount(userId),
+      fetchLongestStreak(userId),
+      fetchAdjustmentHistory(userId),
     ]);
     const [programResult, volumeResult, monthlyResult, streakResult, adjustmentsResult] = results;
 
@@ -50,7 +54,7 @@ export default function ProgressScreen() {
       setError('Kon je progressie niet laden.');
     }
     setIsLoading(false);
-  }, []);
+  }, [session]);
 
   useFocusEffect(
     useCallback(() => {

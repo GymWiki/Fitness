@@ -17,12 +17,16 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
+import { SyncStatusBadge } from '@/components/SyncStatusBadge';
+import { useAuth } from '@/lib/auth';
 import { formatShortDate } from '@/lib/dates';
 import { fetchCardioHistory, fetchExerciseHistory, type CardioHistoryEntry, type HistorySession } from '@/lib/history';
+import { generateId } from '@/lib/id';
+import { enqueue } from '@/lib/offlineQueue';
 import { useProfile } from '@/lib/profile';
 import { fetchProgramDayWithExercises, type ProgramDayForWorkout, type WorkoutExercise } from '@/lib/programs';
 import { restGuidanceFor } from '@/lib/restGuidance';
-import { createWorkout, logCardio, logSet } from '@/lib/workouts';
+import { useSyncStatus } from '@/lib/useSyncStatus';
 import { colors } from '@/theme/colors';
 import { layout } from '@/theme/layout';
 import { spacing } from '@/theme/spacing';
@@ -46,14 +50,17 @@ export default function WorkoutScreen() {
   const params = useLocalSearchParams<{ dayId: string }>();
   const dayId = typeof params.dayId === 'string' ? params.dayId : undefined;
   const router = useRouter();
+  const { session } = useAuth();
   const { profile } = useProfile();
   const goal: Goal = profile?.goal ?? 'mixed';
 
+  const workoutId = useMemo(() => generateId(), []);
+
   const [day, setDay] = useState<ProgramDayForWorkout | null>(null);
-  const [workoutId, setWorkoutId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [exerciseIndex, setExerciseIndex] = useState(0);
+  const syncStatus = useSyncStatus();
 
   useEffect(() => {
     if (!dayId) {
@@ -62,21 +69,36 @@ export default function WorkoutScreen() {
       return;
     }
     fetchProgramDayWithExercises(dayId)
-      .then(async (result) => {
+      .then((result) => {
         if (!result) {
           setLoadError('Deze trainingsdag bestaat niet (meer).');
           return;
         }
         setDay(result);
-        setWorkoutId(await createWorkout(result.id, new Date().toISOString()));
       })
-      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Kon workout niet laden.'))
+      .catch((err) =>
+        setLoadError(
+          err instanceof Error
+            ? `${err.message} (nog niet eerder offline geladen, dus zonder verbinding niet beschikbaar)`
+            : 'Kon workout niet laden.',
+        ),
+      )
       .finally(() => setIsLoading(false));
   }, [dayId]);
 
+  useEffect(() => {
+    if (!session || !day) return;
+    enqueue({
+      type: 'create_workout',
+      payload: { workoutId, userId: session.user.id, programDayId: day.id, performedAt: new Date().toISOString() },
+    });
+    // Runs once per screen visit: workoutId, session and day are all stable for the lifetime of this screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day]);
+
   const exercise = day?.exercises[exerciseIndex] ?? null;
 
-  if (isLoading || (day && !workoutId)) {
+  if (isLoading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={colors.accent} size="large" />
@@ -95,7 +117,7 @@ export default function WorkoutScreen() {
     );
   }
 
-  if (!exercise || !workoutId) {
+  if (!exercise) {
     return (
       <View style={styles.centered}>
         <EmptyState title="Geen oefeningen" body="Deze trainingsdag heeft nog geen oefeningen om te loggen." />
@@ -116,6 +138,7 @@ export default function WorkoutScreen() {
           <Pressable onPress={() => router.back()} hitSlop={12} style={styles.closeButtonWrap}>
             <Text style={styles.closeButton}>Sluiten</Text>
           </Pressable>
+          <SyncStatusBadge status={syncStatus} />
         </View>
 
         <Text style={typography.label}>{day.name}</Text>
@@ -172,6 +195,7 @@ interface LoggedSet {
 }
 
 function StrengthLogger({ exercise, workoutId, goal }: { exercise: WorkoutExercise; workoutId: string; goal: Goal }) {
+  const { session } = useAuth();
   const [history, setHistory] = useState<HistorySession[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -181,13 +205,14 @@ function StrengthLogger({ exercise, workoutId, goal }: { exercise: WorkoutExerci
   const [rir, setRir] = useState(exercise.targetRIR ?? 1);
 
   useEffect(() => {
+    if (!session) return;
     setIsHistoryLoading(true);
     setHistoryError(null);
-    fetchExerciseHistory(exercise.exerciseName)
+    fetchExerciseHistory(session.user.id, exercise.exerciseName)
       .then(setHistory)
       .catch((err) => setHistoryError(err instanceof Error ? err.message : 'Kon historie niet laden.'))
       .finally(() => setIsHistoryLoading(false));
-  }, [exercise.exerciseName]);
+  }, [session, exercise.exerciseName]);
 
   const advice = useMemo<StrengthAdvice | null>(() => {
     if (history.length === 0) return null;
@@ -214,9 +239,13 @@ function StrengthLogger({ exercise, workoutId, goal }: { exercise: WorkoutExerci
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [advice]);
 
-  async function handleLogSet() {
+  async function logSet() {
     const setOrder = loggedSets.length + 1;
-    const setLogId = await logSet({ workoutId, dayExerciseId: exercise.id, setOrder, weightKg, reps, rir });
+    const setLogId = generateId();
+    await enqueue({
+      type: 'log_set',
+      payload: { setLogId, workoutId, dayExerciseId: exercise.id, setOrder, weightKg, reps, rir },
+    });
     setLoggedSets((prev) => [...prev, { id: setLogId, setOrder, weightKg, reps, rir }]);
   }
 
@@ -250,7 +279,7 @@ function StrengthLogger({ exercise, workoutId, goal }: { exercise: WorkoutExerci
       </View>
 
       <View style={styles.logButtonWrap}>
-        <Button onPress={handleLogSet}>{`Set ${loggedSets.length + 1} loggen`}</Button>
+        <Button onPress={logSet}>{`Set ${loggedSets.length + 1} loggen`}</Button>
       </View>
       <Text style={styles.tip}>{restGuidanceFor(goal)}</Text>
 
@@ -387,15 +416,20 @@ function CardioLogger({ exercise, workoutId, goal }: { exercise: WorkoutExercise
   }, [isHistoryLoading, typeAdvice.recommendedType, progressionAdvice]);
 
   async function logSession() {
-    await logCardio({
-      workoutId,
-      dayExerciseId: exercise.id,
-      sessionType: typeAdvice.recommendedType,
-      durationMinutes,
-      rpe,
-      distanceKm: distanceKm > 0 ? distanceKm : undefined,
-      avgHeartRate: avgHeartRate > 0 ? avgHeartRate : undefined,
-      rounds: typeAdvice.recommendedType === 'interval' ? rounds : undefined,
+    const cardioLogId = generateId();
+    await enqueue({
+      type: 'log_cardio',
+      payload: {
+        cardioLogId,
+        workoutId,
+        dayExerciseId: exercise.id,
+        sessionType: typeAdvice.recommendedType,
+        durationMinutes,
+        rpe,
+        distanceKm: distanceKm > 0 ? distanceKm : undefined,
+        avgHeartRate: avgHeartRate > 0 ? avgHeartRate : undefined,
+        rounds: typeAdvice.recommendedType === 'interval' ? rounds : undefined,
+      },
     });
     setIsLogged(true);
   }

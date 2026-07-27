@@ -1,6 +1,7 @@
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { adjustmentTitle } from '@/lib/adjustmentLabels';
 import { fetchAdjustmentHistory, type AdjustmentHistoryEntry } from '@/lib/adjustmentHistory';
+import { useAuth } from '@/lib/auth';
 import { formatShortDate } from '@/lib/dates';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
@@ -21,16 +22,19 @@ function groupByWeek(entries: AdjustmentHistoryEntry[]): Array<[number, Adjustme
 }
 
 export default function AdjustmentHistoryScreen() {
+  const { session } = useAuth();
+
   const [entries, setEntries] = useState<AdjustmentHistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAdjustmentHistory()
+    if (!session) return;
+    fetchAdjustmentHistory(session.user.id)
       .then(setEntries)
       .catch((err) => setError(err instanceof Error ? err.message : 'Kon geschiedenis niet laden.'))
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [session]);
 
   return (
     <View style={styles.container}>
