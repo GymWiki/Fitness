@@ -108,6 +108,12 @@ function ProfileEditForm({ onClose }: { onClose: () => void }) {
           </Pressable>
         ))}
       </View>
+      {daysPerWeek !== null && daysPerWeek !== profile?.daysPerWeek && (
+        <Text style={styles.body}>
+          Dit wijzigt alleen je toekomstige planning. De opbouw van je huidige schema (welke dagen, welke oefeningen)
+          verandert hier niet mee — kies daarvoor "Ander doel kiezen".
+        </Text>
+      )}
 
       {daysPerWeek !== null && (
         <>

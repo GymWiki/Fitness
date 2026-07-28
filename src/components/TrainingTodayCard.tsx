@@ -67,7 +67,7 @@ export function TrainingTodayCard({ userId }: { userId: string }) {
 
   // On a rest day (or once the calendar plan runs out) there's no specific day to open — the CTA
   // always has somewhere useful to go instead of silently doing nothing when tapped.
-  const ctaLabel = todayDay ? (isDoneToday ? 'Bekijk workout' : 'Start workout') : 'Naar schema';
+  const ctaLabel = todayDay ? (isDoneToday ? 'Bekijk resultaat' : 'Start training') : 'Naar schema';
 
   return (
     <DashboardCardShell

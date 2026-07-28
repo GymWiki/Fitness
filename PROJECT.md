@@ -2138,6 +2138,68 @@ bevestigt dat `progression_rule`/`exercise_order`/`muscle_group`/
 `exercise_type` correct de insert-rij in gaan]), `expo export --platform
 web` bouwt zonder fouten.
 
+## Hands-on UX-audit: instinctieve duidelijkheid en samenhang
+
+*Methode-kanttekening.* De opdracht vroeg om daadwerkelijk doorklikken
+als gebruiker. Dat bleek in dit sandbox-environment niet mogelijk: het
+netwerkbeleid blokkeert elk uitgaand verzoek naar `*.supabase.co` met
+een 403 (bevestigd met een directe `curl`, los van de app — geen
+cert-/configprobleem). Een omgevingswijziging tijdens de sessie loste
+dit niet op (geldt alleen voor een nieuwe sessie, niet de lopende). In
+plaats daarvan is elk van de 8 flows grondig doorgelopen via bronlezen:
+elk scherm, elke databinding, elke navigatie-`onPress` nagetrokken op
+dead ends, dubbele/achtergebleven UI, en terminologie-consistentie.
+
+*Bevindingen en fixes (alleen flow/navigatie/consistentie/opruiming —
+geen wijziging aan trainings-, voedings- of herstellogica):*
+
+1. **Dode route-registraties voor de verwijderde voedingsfunctie.**
+   `app/_layout.tsx` registreerde nog `Stack.Screen name="food-scan"` en
+   `name="food-search"`, terwijl die bestanden niet meer bestaan (de
+   voedingsfunctie is bewust verwijderd, zie eerdere sessie-entry). De
+   rest van die verwijdering was verder grondig opgeruimd (geen wees-
+   bestanden, geen "Voeding"-FAQ-categorie meer) — alleen deze twee
+   registraties waren blijven hangen. Verwijderd.
+2. **Terminologie-inconsistentie voor dezelfde actie.** "Start
+   workout"/"Bekijk workout" (`TrainingTodayCard` op het dashboard) vs.
+   "Start training"/"Bekijk resultaat" (`ScheduleDayDetail` op Schema)
+   vs. "Start training →" (readiness-scherm) — drie schermen, drie
+   bewoordingen voor exact dezelfde navigatie naar `/workout/[dayId]`.
+   `TrainingTodayCard` nu gelijkgetrokken op "Start training"/"Bekijk
+   resultaat", aansluitend bij de rest van de app se taal ("Training
+   vandaag", "trainingsdag", "trainingshistorie").
+3. **Stille mismatch bij "Dagen per week" in Profiel.** Dat veld past
+   alleen `profiles.daysPerWeek`/voorkeursdagen aan; het huidige
+   programma (dagen-template) verandert niet mee, en er is momenteel
+   geen weg om dat te forceren zonder ook van streeffysiek te wisselen
+   (`switch-goal.tsx` staat "Bevestigen" alleen toe bij een andere
+   fysiek-keuze). Dat gat zelf oplossen zou een nieuwe capability zijn
+   (buiten scope); in plaats daarvan is er een duidelijkheidstekst
+   toegevoegd die eerlijk zegt dat dit veld alleen de toekomstige
+   planning raakt, niet de schema-opbouw.
+
+*Gemeld maar bewust niet gefixed (logica, buiten scope):* een workout
+wordt al als "gedaan" gemarkeerd zodra het scherm opent
+(`create_workout` in `offlineQueue.ts` vuurt bij het laden van de dag,
+ongeacht of er iets gelogd wordt) — wanneer iets "gedaan" wordt is
+trainingslogica. Geen directe link Progressie → Readiness (wel
+bereikbaar via de Vandaag-tab) — geen dead end, lage prioriteit. Het
+login/registratiescherm gebruikt handgerolde stijlen i.p.v. de gedeelde
+`Button`/theme-tokens, maar de waarden bleken byte-voor-byte identiek
+aan wat de tokens geven — geen zichtbaar verschil, dus niet aangeraakt.
+
+*Wat al goed zat.* Onboarding, Schema (na de eerdere fixes deze sessie),
+switch-goal, FAQ, readiness (sterke cross-links: tik-kaart → training,
+tik-kaart → FAQ-diepteverwijzing via `openId`), Progressie,
+week-review, adjustment-history: geen dead ends, consistente
+terminologie/visuele stijl, geen dubbele UI. Flow 5 (voeding) is niet
+van toepassing — die functie is bewust verwijderd (bevestigd via
+git-historie en de eerdere PROJECT.md-entry), geen bug.
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 251 tests slagen
+(ongewijzigd — dit was zuiver flow-/tekstwerk, geen nieuwe testbare
+logica), `expo export --platform web --clear` bouwt zonder fouten.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen
