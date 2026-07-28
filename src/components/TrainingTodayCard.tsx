@@ -28,17 +28,21 @@ interface TrainingTodayData {
   scheduledToday: ScheduledSessionRow | null | undefined;
 }
 
-async function loadTrainingTodayData(userId: string): Promise<TrainingTodayData> {
-  const program = await fetchActiveProgram(userId);
-  let scheduledToday: ScheduledSessionRow | null | undefined;
+async function loadScheduledToday(userId: string): Promise<ScheduledSessionRow | null | undefined> {
   try {
     await ensureScheduledWindow(userId);
     const today = todayLocalDateString();
     const rows = await fetchScheduledSessions(userId, today, today);
-    scheduledToday = rows[0] ?? null;
+    return rows[0] ?? null;
   } catch {
-    scheduledToday = undefined; // calendar planning unavailable right now — fall back silently, this section never blocks on it
+    return undefined; // calendar planning unavailable right now — fall back silently, this section never blocks on it
   }
+}
+
+// The program fetch and the schedule fetch don't depend on each other's result, so they run
+// concurrently instead of one blocking the other.
+async function loadTrainingTodayData(userId: string): Promise<TrainingTodayData> {
+  const [program, scheduledToday] = await Promise.all([fetchActiveProgram(userId), loadScheduledToday(userId)]);
   return { program, scheduledToday };
 }
 

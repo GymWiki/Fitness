@@ -46,26 +46,33 @@ interface WeekOverviewData {
   weekStrip: WeekStripDay[];
 }
 
-async function loadWeekOverviewData(userId: string): Promise<WeekOverviewData> {
-  const [program, workoutDates] = await Promise.all([fetchActiveProgram(userId), fetchWorkoutDates(userId)]);
-  const daysPerWeek = program?.days.length ?? 0;
-  const streak = calculateStreak(workoutDates, daysPerWeek);
-
-  // Prefers the real calendar schedule (exactly what "Vandaag" and the schema page also
-  // read) over the workoutDates heuristic, so the strip never shows a second, possibly-
-  // divergent guess. Falls back silently when no schedule exists yet (older accounts).
+// Prefers the real calendar schedule (exactly what "Vandaag" and the schema page also
+// read) over the workoutDates heuristic, so the strip never shows a second, possibly-
+// divergent guess. Falls back silently when no schedule exists yet (older accounts).
+async function loadScheduleWeekStrip(userId: string): Promise<WeekStripDay[] | null> {
   try {
     await ensureScheduledWindow(userId);
     const weekStart = startOfIsoWeek(new Date());
     const weekEnd = addDays(weekStart, 6);
     const rows = await fetchScheduledSessions(userId, toLocalDateString(weekStart), toLocalDateString(weekEnd));
-    if (rows.length > 0) {
-      return { streak, weekStrip: scheduleToWeekStrip(rows) };
-    }
+    return rows.length > 0 ? scheduleToWeekStrip(rows) : null;
   } catch {
-    // fall through to the heuristic below
+    return null; // fall through to the heuristic below
   }
-  return { streak, weekStrip: computeWeekStrip(workoutDates, daysPerWeek) };
+}
+
+// The schedule fetch doesn't depend on `program`/`workoutDates` (only the heuristic fallback
+// does), so all three run concurrently instead of the schedule chain waiting on the first two.
+async function loadWeekOverviewData(userId: string): Promise<WeekOverviewData> {
+  const [program, workoutDates, scheduleWeekStrip] = await Promise.all([
+    fetchActiveProgram(userId),
+    fetchWorkoutDates(userId),
+    loadScheduleWeekStrip(userId),
+  ]);
+  const daysPerWeek = program?.days.length ?? 0;
+  const streak = calculateStreak(workoutDates, daysPerWeek);
+  const weekStrip = scheduleWeekStrip ?? computeWeekStrip(workoutDates, daysPerWeek);
+  return { streak, weekStrip };
 }
 
 /**

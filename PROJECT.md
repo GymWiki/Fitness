@@ -2254,6 +2254,145 @@ consistent met de andere ongeteste hooks `useSyncStatus`/
 `useReducedMotion`), `expo export --platform web --clear` bouwt zonder
 fouten.
 
+## Bugfix: trage laadtijden + tekst-overflow op readiness-ringen
+
+*Diagnose bug 1 (in de gevraagde volgorde).*
+1. **Data-fetching-patroon**: de vier Vandaag-kaarten (`TrainingTodayCard`,
+   `ProgressSummaryCard`, `ReadinessCard`, `WeekOverview`) zijn elk hun eigen
+   component met een eigen `useCachedData`-call — React mount/focust die
+   onafhankelijk van elkaar, dus op kaartniveau liep dit al parallel (zie de
+   vorige sectie hierboven). Wél sequentieel: **binnen** twee kaarten zelf.
+   `TrainingTodayCard`'s `loadTrainingTodayData` deed `await
+   fetchActiveProgram(userId)` gevolgd door `await ensureScheduledWindow` +
+   `await fetchScheduledSessions` — terwijl die tweede keten niets van
+   `program` gebruikt. `WeekOverview`'s `loadWeekOverviewData` had hetzelfde
+   patroon: `Promise.all([fetchActiveProgram, fetchWorkoutDates])` gevolgd
+   door een losse `ensureScheduledWindow` + `fetchScheduledSessions`-keten
+   die alleen als fallback iets van de eerste twee nodig heeft
+   (`daysPerWeek`, uitsluitend gebruikt als de schedule-call zelf mislukt).
+2. **Onnodige herberekeningen**: `app/readiness.tsx` berekende
+   `sortedMuscleGroups`, `tapInfo`, `curve` en `curveTapInfo` (incl.
+   `generateRecoveryCurve`) inline bij elke render, zonder memoization.
+3. **Bundle-grootte**: geen zware chart-library (geen recharts o.i.d.) —
+   `RecoveryCurveChart` is een eigen SVG-component, maar werd wel altijd
+   statisch meegeladen in de hoofdbundel van `readiness.tsx`, ook op het
+   moment dat de curve nog niet zichtbaar is (pas na het laden van de
+   schattingen).
+4. **Laadstaten**: al opgelost door de vorige performance-fix
+   (`useCachedData`, zie sectie hierboven) — elke kaart toont zijn eigen
+   `ActivityIndicator` onafhankelijk, en herhaalt die niet meer bij een
+   refocus zodra er al data is. Geen aanvullende wijziging nodig hier.
+5. **N+1-queries**: `fetchAllMuscleGroupRecoveryEstimates`
+   (`src/lib/recovery.ts`) riep `fetchRecoveryEstimate` per spiergroep aan
+   (10x), en elke aanroep deed zijn eigen volledige ronde van 5 queries
+   (`programs` → `program_days` → `day_exercises` → `set_logs` →
+   `workouts`) via `fetchLastSessionForMuscleGroup`. De eerste twee queries
+   (`programs`, `program_days`) zijn identiek voor elke spiergroep — dat
+   werd dus letterlijk 10x herhaald voor exact dezelfde data. In totaal
+   ~50 query-round-trips per readiness-load in plaats van 5.
+
+*Fix bug 1.*
+- `TrainingTodayCard.tsx`: `loadTrainingTodayData` haalt `fetchActiveProgram`
+  en de nieuwe `loadScheduledToday`-helper nu via `Promise.all` gelijktijdig
+  op in plaats van na elkaar.
+- `WeekOverview.tsx`: dezelfde behandeling — `fetchActiveProgram`,
+  `fetchWorkoutDates` én de nieuwe `loadScheduleWeekStrip`-helper lopen alle
+  drie gelijktijdig via één `Promise.all`; de fallback-heuristiek
+  (`computeWeekStrip`) wordt pas ná afloop toegepast als de schedule-call
+  niets opleverde — exact dezelfde voorrangsregel als voorheen, alleen niet
+  langer wachtend tot de eerste twee calls klaar zijn voordat de derde start.
+- `app/readiness.tsx`: `sortedMuscleGroups`, `tapInfo`, `curve` en
+  `curveTapInfo` zijn nu `useMemo`'d op hun daadwerkelijke afhankelijkheden
+  (`estimates`, geselecteerde spiergroep, curve-spiergroep) — ze rekenen dus
+  alleen opnieuw als de onderliggende data verandert, niet bij elke render
+  (bv. een tik die alleen `selectedMuscleGroup` wijzigt herberekent niet
+  meer de hele gesorteerde lijst).
+- `app/readiness.tsx`: `RecoveryCurveChart` wordt nu lazy geladen
+  (`React.lazy` + dynamische `import()`, met een `Suspense`-fallback via de
+  bestaande `ActivityIndicator`). Bevestigd met `expo export --platform web
+  --clear` dat dit een echte losse chunk oplevert
+  (`RecoveryCurveChart-[hash].js`, 3.2KB) naast de hoofdbundel — de curve
+  wordt dus pas gedownload zodra de readiness-pagina daadwerkelijk open
+  gaat, niet als onderdeel van elke pagina die toevallig hetzelfde
+  dependency-getreewerk deelt.
+- `src/lib/recovery.ts`: nieuwe `fetchLastSessionsByMuscleGroup(userId)`
+  vervangt de 10x-herhaalde query-ronde door één ronde totaal —
+  `day_exercises`/`set_logs` worden voor *alle* spiergroepen tegelijk
+  opgehaald (niet meer gefilterd op één `muscle_group`), `workouts` wordt in
+  één `.in(...)`-call voor de volledige unie van betrokken workout-ID's
+  opgehaald, en de "meest recente sessie per spiergroep"-logica (voorheen
+  `.order().limit(1)` in de database) gebeurt nu client-side per groep op
+  basis van ISO-tijdstempel-vergelijking — functioneel identiek resultaat,
+  5 queries in plaats van 50. Geretourneerd als entries-array
+  (`Array<[string, RecoverySessionInput | null]>`), niet als `Map`, om
+  cache-compatibel te blijven (`Map` overleeft `JSON.stringify` niet — zelfde
+  reden als bij `ReadinessCard`'s eigen caching-laag).
+  `fetchAllMuscleGroupRecoveryEstimates` cachet dit resultaat nu via
+  `fetchWithCache` en bouwt de `Map<string, RecoveryEstimate>` daarna pas op
+  met `estimateRecoveryState` per groep. `fetchRecoveryEstimate` (enkelvoud,
+  gebruikt op de workout-kaart voor precies één spiergroep) is ongewijzigd —
+  geen andere aanroepers van de oude
+  `fetchLastSessionForMuscleGroup`-functie, dus veilig om alleen het
+  "alle-groepen"-pad te herstructureren.
+
+*Diagnose + fix bug 2 (tekst-overflow readiness-ringen).*
+`MuscleRecoveryRing.tsx`'s tile had geen eigen breedte — op de compacte
+dashboard-rij (`ReadinessCard`, 4 ringen in een `flexDirection: 'row'` zonder
+per-ring wrapper) kon de naam- of statustekst daardoor breder worden dan de
+kolom die er eigenlijk voor bedoeld was, en zo in de buurring lopen bij lange
+waarden als "Bilspieren/Hamstrings" of "Klaar om te starten" (de langste
+combinatie in het systeem: langste spiergroepnaam × langste statuslabel).
+Op de volledige readiness-pagina viel dit niet op omdat `gridTile` (31%
+breed) de kolom daar al begrensde.
+
+*Fix.* `MuscleRecoveryRing` geeft de tile nu altijd een expliciete breedte:
+op de compacte dashboard-maat (`size <= 48`) een vaste 52px — berekend zodat
+4 tiles + gaps nog passen op een 320px-breed scherm (de smalste ondersteunde
+telefoonbreedte) — en op de volledige-pagina-maat `width: '100%'` zodat de
+tile exact de bestaande 31%-`gridTile`-kolom vult. Beide tekstregels
+(spiergroepnaam en statuslabel) hebben `numberOfLines={1}` +
+`ellipsizeMode="tail"`, en de compacte variant gebruikt bovendien een
+kleiner lettertype (10px/9px i.p.v. 12px/11px) zodat kortere namen vaker
+volledig passen in plaats van altijd af te knippen. Het label verdwijnt
+nooit volledig — bij een te lange waarde knipt het netjes af met een
+ellipsis (…), dezelfde toegankelijkheidseis als voorheen (kleur is nooit het
+enige signaal; de tekst blijft aanwezig, ook al is die soms ingekort).
+
+*Test.* Een losse, headless Playwright-render van de exacte tile-opmaak
+(breedte, gap, `numberOfLines`-CSS-equivalent) met de langst mogelijke
+combinatie van spiergroepnaam en statuslabel uit het systeem
+("Bilspieren/Hamstrings" × "Klaar om te starten", "Venster voorbij",
+"Venster sluit") bevestigt op 320px, 375px én 768px viewportbreedte: geen
+enkele tile overschrijdt zijn kolomgrens, en elk label toont een nette
+ellipsis in plaats van overlopende tekst.
+
+*Afbakening.* Geen wijziging aan `estimateRecoveryState`,
+`recoveryReadinessPercent`, `recoveryRingLabel`, `compareMuscleRecoveryPriority`
+of enige databronfunctie behalve de query-*structuur* van
+`fetchLastSessionsByMuscleGroup` (zelfde resultaat, minder round-trips) —
+uitsluitend laadperformance en de visuele opmaak van de readiness-tekst,
+zoals gevraagd.
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 251 tests slagen (ongewijzigd
+— dit is opnieuw presentationele/data-laag-herstructurering zonder nieuwe
+pure logica om te unit-testen), `expo export --platform web --clear` bouwt
+zonder fouten en levert nog steeds de losse `RecoveryCurveChart`-chunk op.
+Kwantitatief: de readiness-kaart ging van ~50 sequentiële
+Supabase-round-trips (10 spiergroepen × 5 queries elk) naar 5 totaal — bij
+een realistische ~80-120ms per round-trip is dat een verwachte orde-grootte
+van seconden→honderden milliseconden op de netwerklaag alleen, los van de nu
+weggehaalde sequentiële `await`-ketens in `TrainingTodayCard`/`WeekOverview`.
+Niet geverifieerd met een daadwerkelijke ingelogde browser-meting (geen
+wachtwoord voor een bestaand testaccount beschikbaar in deze sessie, en het
+resetten van een echt gebruikersaccount om er een te verkrijgen viel buiten
+de scope van deze bugfix) — de tekst-overflow-test hierboven is wel met een
+echte headless-browserrender gedaan omdat die geen inlog vereist. Bevestigd
+via broncode-onderzoek dat een trage individuele databron (bv. voeding, of
+een van de vier kaarten) de andere kaarten niet blokkeert: elke kaart heeft
+zijn eigen `useCachedData`-aanroep in zijn eigen component-`useEffect`, dus
+een hangende fetch in de ene kaart heeft geen enkel codepad dat de andere
+kaarten's state raakt.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen

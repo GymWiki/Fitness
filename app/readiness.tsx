@@ -1,13 +1,13 @@
 import { ALL_MUSCLE_GROUPS } from '@fitness/program-generator';
 import { generateRecoveryCurve, type RecoveryEstimate, type RecoveryStatus } from '@fitness/progression-engine';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
 import { ModalHeader } from '@/components/ModalHeader';
 import { MuscleRecoveryRing } from '@/components/MuscleRecoveryRing';
-import { RecoveryCurveChart } from '@/components/RecoveryCurveChart';
+const RecoveryCurveChart = lazy(() => import('@/components/RecoveryCurveChart').then((m) => ({ default: m.RecoveryCurveChart })));
 import { useAuth } from '@/lib/auth';
 import { fetchActiveProgram, type ActiveProgram } from '@/lib/programs';
 import { compareMuscleRecoveryPriority, describeMuscleRecoveryTap } from '@/lib/recoveryReadiness';
@@ -61,16 +61,25 @@ export default function ReadinessScreen() {
     }, [load]),
   );
 
-  const sortedMuscleGroups = [...ALL_MUSCLE_GROUPS]
-    .map((muscleGroup): [string, RecoveryEstimate] | null => {
-      const estimate = estimates.get(muscleGroup);
-      return estimate ? [muscleGroup, estimate] : null;
-    })
-    .filter((entry): entry is [string, RecoveryEstimate] => entry !== null)
-    .sort(compareMuscleRecoveryPriority);
+  // Memoized: these only need to redo work when `estimates` actually changes, not on every
+  // render this screen gets from unrelated state (e.g. tapping a ring elsewhere on the page).
+  const sortedMuscleGroups = useMemo(
+    () =>
+      [...ALL_MUSCLE_GROUPS]
+        .map((muscleGroup): [string, RecoveryEstimate] | null => {
+          const estimate = estimates.get(muscleGroup);
+          return estimate ? [muscleGroup, estimate] : null;
+        })
+        .filter((entry): entry is [string, RecoveryEstimate] => entry !== null)
+        .sort(compareMuscleRecoveryPriority),
+    [estimates],
+  );
 
   const selectedEstimate = selectedMuscleGroup ? estimates.get(selectedMuscleGroup) : undefined;
-  const tapInfo = selectedMuscleGroup && selectedEstimate ? describeMuscleRecoveryTap(selectedMuscleGroup, selectedEstimate) : null;
+  const tapInfo = useMemo(
+    () => (selectedMuscleGroup && selectedEstimate ? describeMuscleRecoveryTap(selectedMuscleGroup, selectedEstimate) : null),
+    [selectedMuscleGroup, selectedEstimate],
+  );
 
   // "Readiness zegt: klaar" moet direct naar de bijbehorende training kunnen leiden in plaats
   // van de gebruiker zelf naar Schema te laten zoeken — de eerste actieve programmadag die deze
@@ -86,8 +95,14 @@ export default function ReadinessScreen() {
   // overrides this, but closing the tap-card doesn't blank the curve back out.
   const curveMuscleGroup = curveMuscleGroupOverride ?? sortedMuscleGroups[0]?.[0] ?? null;
   const curveEstimate = curveMuscleGroup ? estimates.get(curveMuscleGroup) : undefined;
-  const curve = curveMuscleGroup && curveEstimate ? generateRecoveryCurve(curveMuscleGroup, curveEstimate) : null;
-  const curveTapInfo = curveMuscleGroup && curveEstimate ? describeMuscleRecoveryTap(curveMuscleGroup, curveEstimate) : null;
+  const curve = useMemo(
+    () => (curveMuscleGroup && curveEstimate ? generateRecoveryCurve(curveMuscleGroup, curveEstimate) : null),
+    [curveMuscleGroup, curveEstimate],
+  );
+  const curveTapInfo = useMemo(
+    () => (curveMuscleGroup && curveEstimate ? describeMuscleRecoveryTap(curveMuscleGroup, curveEstimate) : null),
+    [curveMuscleGroup, curveEstimate],
+  );
   const chartWidth = Math.min(windowWidth - 80, 480);
 
   return (
@@ -131,7 +146,9 @@ export default function ReadinessScreen() {
           {curve && curveEstimate && curveTapInfo && (
             <View style={styles.curveSection}>
               <Text style={styles.curveTitle}>Herstelcurve — {curveTapInfo.muscleGroup}</Text>
-              <RecoveryCurveChart curve={curve} estimate={curveEstimate} width={chartWidth} />
+              <Suspense fallback={<ActivityIndicator color={colors.accent} />}>
+                <RecoveryCurveChart curve={curve} estimate={curveEstimate} width={chartWidth} />
+              </Suspense>
               <Text style={[styles.curveStatus, { color: STATUS_COLOR[curveEstimate.status] }]}>{curveTapInfo.statusLabel}</Text>
               <Text style={styles.curveExplanation}>{curveTapInfo.explanation}</Text>
               <Text style={styles.curveDisclaimer}>
