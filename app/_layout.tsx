@@ -67,6 +67,7 @@ function RootNavigator() {
         <Stack.Screen name="switch-goal" options={{ presentation: 'modal' }} />
         <Stack.Screen name="faq" options={{ presentation: 'modal' }} />
         <Stack.Screen name="readiness" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="exercise-demo" options={{ presentation: 'modal' }} />
       </Stack.Protected>
     </Stack>
   );

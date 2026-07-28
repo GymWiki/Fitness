@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
-import { ChevronRightIcon } from '@/components/icons';
+import { ChevronRightIcon, InfoIcon } from '@/components/icons';
 import { StatTile } from '@/components/StatTile';
 import { adjustmentTitle } from '@/lib/adjustmentLabels';
 import { fetchAdjustmentHistory, type AdjustmentHistoryEntry } from '@/lib/adjustmentHistory';
@@ -88,16 +88,27 @@ export default function ProgressScreen() {
             <Text style={styles.sectionTitle}>Per oefening</Text>
             {exercises.length === 0 && <EmptyState title="Nog geen oefeningen" body="Zodra je programma actief is, zie je hier per oefening je ontwikkeling." />}
             {exercises.map((exercise) => (
-              <Pressable
-                key={exercise.id}
-                style={styles.exerciseLinkRow}
-                onPress={() =>
-                  router.push({ pathname: '/history/[dayExerciseId]', params: { dayExerciseId: exercise.id, exerciseName: exercise.exerciseName, kind: exercise.kind } })
-                }
-              >
-                <Text style={styles.exerciseLinkText}>{exercise.exerciseName}</Text>
-                <ChevronRightIcon size={18} color={colors.textSecondary} />
-              </Pressable>
+              <View key={exercise.id} style={styles.exerciseLinkRow}>
+                <Pressable
+                  style={styles.exerciseLinkTapArea}
+                  onPress={() =>
+                    router.push({ pathname: '/history/[dayExerciseId]', params: { dayExerciseId: exercise.id, exerciseName: exercise.exerciseName, kind: exercise.kind } })
+                  }
+                >
+                  <Text style={styles.exerciseLinkText}>{exercise.exerciseName}</Text>
+                  <ChevronRightIcon size={18} color={colors.textSecondary} />
+                </Pressable>
+                <Pressable
+                  style={styles.demoButton}
+                  hitSlop={8}
+                  accessibilityLabel={`Demonstratie: ${exercise.exerciseName}`}
+                  onPress={() =>
+                    router.push({ pathname: '/exercise-demo', params: { name: exercise.exerciseName, muscleGroup: exercise.muscleGroup ?? '' } })
+                  }
+                >
+                  <InfoIcon size={18} color={colors.textSecondary} />
+                </Pressable>
+              </View>
             ))}
 
             <View style={styles.sectionHeaderRow}>
@@ -170,7 +181,6 @@ const styles = StyleSheet.create({
   },
   exerciseLinkRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -180,10 +190,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.sm,
   },
+  exerciseLinkTapArea: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   exerciseLinkText: {
     color: colors.textPrimary,
     fontSize: 15,
     fontWeight: '600',
+  },
+  demoButton: {
+    marginLeft: spacing.md,
+    padding: spacing.xs,
   },
   adjustmentCard: {
     marginBottom: spacing.sm,

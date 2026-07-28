@@ -2525,6 +2525,85 @@ vorige twee secties: deze sandbox kan geen directe verbinding met het
 Supabase-project maken om in te loggen en de e-mail te laten versturen/
 bevestigen.
 
+## Feature: oefening-demonstraties (media + uitvoeringstips)
+
+*Wat.* Op de Progressie-pagina en bij elke oefening in de Schema-detailweergave
+(zowel de bewerkbare als de alleen-lezen variant) staat nu een "i"-knop naast
+elke oefening. Die opent een modal met een demonstratie van de oefening
+(start-/eindpositie-foto's) plus een kort "Let op"-blok met 2-4 concrete
+aandachtspunten. Puur aanvullende content — geen wijziging aan trainingslogica,
+advies-berekening of de oefeningen-catalogus zelf.
+
+*Databron.* `yuhonas/free-exercise-db` (873 oefeningen, Unlicense/public
+domain, self-hostable, geen API-key, gebundeld via directe GitHub-raw-URL's).
+Bewust gekozen boven:
+- **ExerciseDB API** — AGPL-3.0 (copyleft, onwenselijk voor een gesloten app)
+  + betaalde tiers boven een gratis quota + media wordt live gehotlinkt bij
+  een derde partij die kan verdwijnen of prijzen kan wijzigen.
+- **hasaneyldrm/exercises-dataset** — de datastructuur is MIT, maar de
+  afbeeldingen zelf zijn expliciet niet-vrij herdistribueerbaar (© Gym,
+  "redistributed with permission"). MIT op de code zegt niets over de
+  media-assets die de feature nodig heeft.
+- Geen video's gevonden onder een geschikte licentie met bruikbare dekking
+  van de catalogus — free-exercise-db biedt twee foto's per oefening
+  (start-/eindpositie), geen video. De "video met loop/mute"-UI-tak uit de
+  oorspronkelijke opzet is daarom niet gebouwd; de fotoreeks vervult dezelfde
+  functie (correcte uitvoering tonen) zonder een dure/kwetsbare betaalde
+  video-API erbij te halen voor een nice-to-have feature.
+
+*Matching.* De catalogus (`packages/program-generator/src/exercises.ts`,
+~68 unieke oefeningnamen, ongewijzigd) is met de hand tegen de 873
+dataset-entries gelegd — een eerste automatische fuzzy-match op woord-overlap
+gaf op meerdere plekken een verkeerde match (bv. "Nordic Curl
+(geassisteerd)" → "Barbell Curl"), dus is bewust gekozen voor een handmatige,
+conservatieve koppeling in plaats van dat risico te lopen. 45 van de ~68
+namen zijn gematcht; de overige ~23 (o.a. Bulgarian Split Squat, Push-up,
+Pull-up, Nordic Curl (geassisteerd), Glute Bridge — vooral varianten zonder
+een 1-op-1 dataset-equivalent) laten bewust géén rij achter en tonen de
+fallback. Zie de header van migratie `0007_exercise_media.sql` voor de
+volledige matched/unmatched-lijst en motivatie.
+
+*Caching (zelfde patroon als het eerdere `food_products`).* Nieuwe tabel
+`exercise_media` (`exercise_name` uniek, `media_urls text[]`, `tips text[]`,
+`source_name`/`source_url`/`source_license`) — eenmalig gevuld bij het maken
+van de migratie, niet bij elk paginabezoek. `src/lib/exerciseMedia.ts`
+(`fetchExerciseMedia`) leest alleen uit deze eigen tabel via `fetchWithCache`
+(hetzelfde network-first-met-lokale-fallback-patroon als de rest van de
+data-laag) — de externe bron (`free-exercise-db` op GitHub) wordt na het
+schrijven van de migratie nooit meer live aangeroepen door de app zelf.
+
+*UI.* Nieuwe `InfoIcon` (`src/components/icons.tsx`) als losstaande knop naast
+de bestaande tap-target (Progressie: tikken op de naam gaat nog steeds naar de
+historie, de i-knop ernaast opent de demo — additief, geen bestaand gedrag
+vervangen). Nieuw modal-scherm `app/exercise-demo.tsx`
+(`useLocalSearchParams<{ name, muscleGroup }>`, geregistreerd in
+`app/_layout.tsx`): laadstatus, foutstatus, media + "Let op"-tips +
+attributieregel (`Media: {bron} ({licentie})`) bij een match, of een nette
+kaart met naam + spiergroep (indien meegegeven) + "Demonstratie nog niet
+beschikbaar voor deze oefening." zonder match — nooit een crash of gebroken
+afbeelding. Ook gekoppeld vanuit `ScheduleDayDetail.tsx` (zowel de bewerkbare
+`EditableExerciseRow` als de alleen-lezen `ReadOnlyExerciseRow`).
+
+*Verificatie.* 4 nieuwe tests in `src/lib/exerciseMedia.test.ts` (gematchte
+oefening toont media/tips/attributie; ongematchte oefening geeft `null` i.p.v.
+een crash; een tweede aanroep zonder netwerk valt terug op de lokale cache
+i.p.v. te falen; cache-entries van verschillende oefeningen lopen niet door
+elkaar) — samen met de rest van de suite 112 tests, allemaal groen.
+`npx tsc --noEmit` clean (de eerste run faalde met 3 `TS2322`-fouten omdat
+`.expo/types/router.d.ts` — expo-router's autogegenereerde typed-routes-
+bestand — nog niets van de nieuwe `/exercise-demo`-route wist; dat bestand
+wordt normaal alleen door de Metro-dev-server ververst, niet door
+`expo export`, dus hier eenmalig direct via expo-router's eigen
+typed-routes-generator opnieuw gegenereerd). `expo export --platform web
+--clear` bouwt zonder fouten. Niet in de browser doorgeklikt (geen
+netwerktoegang tot het Supabase-project vanuit deze sandbox) — de matching en
+databron-selectie zijn wel expliciet met SQL tegen het live project
+geverifieerd (rijaantal 47, alle tips-arrays tussen 2 en 4 items).
+
+*Afbakening.* Geen wijziging aan trainingslogica, advies-berekening of de
+oefeningen-catalogus zelf — uitsluitend demonstratiemedia en
+uitvoeringstips als aanvullende content, precies zoals gevraagd.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen
@@ -2968,6 +3047,7 @@ app/                        Expo Router routes
   switch-goal.tsx                Ander streeffysiek/doel kiezen: PhysiquePicker + bevestiging, archiveert oud programma
   faq.tsx                        "Wetenschap": doorzoekbare, categoriseerbare FAQ met bronvermelding
   readiness.tsx                  Volledig grid van herstelringen (Readiness-kaart tikt hier naartoe) — eigen databron, sortering + tik-kaart + legenda
+  exercise-demo.tsx               Oefening-demonstratie: gecachte media + "Let op"-tips + attributie, of nette fallback zonder match
 src/
   components/
     SyncStatusBadge.tsx        Offline / N niet gesynchroniseerd / Gesynchroniseerd — workout + Vandaag
@@ -3023,6 +3103,8 @@ src/
                                   computeWeekStrip() — 7-daagse ma-zo statusstrip (gedaan/gepland/rustdag/gemist) uit workout-datums + daysPerWeek
     streak.ts / streak.test.ts
                                   calculateStreak() — aaneengesloten volledig-afgelopen weken met weekdoel gehaald, zelfde granulariteit als adaptatieplanner's therapietrouw-check
+    exerciseMedia.ts / exerciseMedia.test.ts
+                                  fetchExerciseMedia() — leest de exercise_media-tabel (via fetchWithCache), nooit live van free-exercise-db
   theme/
     colors.ts                  Donker kleurenpalet (uitgebreid met surfaceElevated/warning/muted-varianten)
     spacing.ts / radii.ts / typography.ts
@@ -3069,6 +3151,7 @@ supabase/
     0003_physique_and_measurements.sql
                                  target_physique/gender/birth_year/target_weight_kg op profiles + body_measurements-tabel
     0005_scheduled_sessions.sql  preferred_weekdays op profiles + scheduled_sessions-tabel + RLS
+    0007_exercise_media.sql      exercise_media-tabel: gecureerde media-URL's + tips uit free-exercise-db (Unlicense), 47 rijen
 vitest.config.ts               Root-scope testrunner voor pure src/lib-modules (src/**/*.test.ts), naast de package-tests
 ```
 
@@ -3111,7 +3194,7 @@ oude project totdat ze handmatig bijgewerkt worden.
 ```bash
 npm install
 cp .env.example .env   # vul EXPO_PUBLIC_SUPABASE_URL en _ANON_KEY in
-npm run test           # unit tests, alle packages + root src/lib samen (238 tests)
+npm run test           # unit tests, alle packages + root src/lib samen (255 tests)
 npm run typecheck      # TypeScript over het hele project
 npm run web            # of: npm start, dan a/i/w voor android/ios/web
 ```

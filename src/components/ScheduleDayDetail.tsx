@@ -3,7 +3,7 @@ import { allExercisesForEquipment, candidateExercisesForMuscleGroup, getRepSchem
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
-import { ChevronDownIcon, ChevronUpIcon, EditIcon, PlusIcon, SwapIcon, TrashIcon } from '@/components/icons';
+import { ChevronDownIcon, ChevronUpIcon, EditIcon, InfoIcon, PlusIcon, SwapIcon, TrashIcon } from '@/components/icons';
 import { useReducedMotion } from '@/lib/useReducedMotion';
 import type { ScheduledSessionRow } from '@/lib/schedule';
 import { addExercise, removeDay, replaceExercise, swapExerciseOrder, updateExerciseSets, type SchemaDay, type SchemaExercise } from '@/lib/schemaEditor';
@@ -93,6 +93,7 @@ function EditableExerciseRow({
     targetRIR: exercise.targetRIR ?? 2,
   });
 
+  const router = useRouter();
   const isStrength = exercise.kind === 'strength';
   const candidates = exercise.muscleGroup ? candidateExercisesForMuscleGroup(exercise.muscleGroup, equipment, exercise.exerciseName) : [];
 
@@ -157,6 +158,13 @@ function EditableExerciseRow({
             <Text style={styles.actionButtonText}>Vervang</Text>
           </Pressable>
         )}
+        <Pressable
+          style={styles.actionButton}
+          onPress={() => router.push({ pathname: '/exercise-demo', params: { name: exercise.exerciseName, muscleGroup: exercise.muscleGroup ?? '' } })}
+        >
+          <InfoIcon size={14} color={colors.textSecondary} />
+          <Text style={styles.actionButtonText}>Demonstratie</Text>
+        </Pressable>
       </View>
 
       {isEditing && (
@@ -198,6 +206,14 @@ function EditableExerciseRow({
 
 /** Read-only fallback row — used only when a scheduled day's program_day no longer belongs to the active program (e.g. viewing history from before a goal switch), so there's advice but nothing safe to edit. */
 function ReadOnlyExerciseRow({ exercise }: { exercise: SchedulePreviewExercise }) {
+  const router = useRouter();
+  const demoLink = (
+    <Pressable style={styles.actionButton} onPress={() => router.push({ pathname: '/exercise-demo', params: { name: exercise.exerciseName } })}>
+      <InfoIcon size={14} color={colors.textSecondary} />
+      <Text style={styles.actionButtonText}>Demonstratie</Text>
+    </Pressable>
+  );
+
   if (exercise.kind === 'strength') {
     return (
       <Card style={styles.exerciseCard}>
@@ -206,6 +222,7 @@ function ReadOnlyExerciseRow({ exercise }: { exercise: SchedulePreviewExercise }
           {exercise.sets}× {exercise.repRangeMin}-{exercise.repRangeMax} reps · RIR {exercise.targetRIR}
         </Text>
         <AdviceLine advice={exercise} />
+        {demoLink}
       </Card>
     );
   }
@@ -213,6 +230,7 @@ function ReadOnlyExerciseRow({ exercise }: { exercise: SchedulePreviewExercise }
     <Card style={styles.exerciseCard}>
       <Text style={typography.bodyStrong}>{exercise.exerciseName}</Text>
       <AdviceLine advice={exercise} />
+      {demoLink}
     </Card>
   );
 }

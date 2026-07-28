@@ -59,6 +59,17 @@ export function CheckIcon({ size = 24, color }: IconProps) {
   );
 }
 
+/** Opens an exercise's demonstration (media + form cues) — a separate affordance from a row's main tap target elsewhere. */
+export function InfoIcon({ size = 24, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="9" stroke={color} strokeWidth={STROKE_WIDTH} />
+      <Line x1="12" y1="11" x2="12" y2="16.5" stroke={color} strokeWidth={STROKE_WIDTH} strokeLinecap="round" />
+      <Circle cx="12" cy="7.5" r="1" fill={color} />
+    </Svg>
+  );
+}
+
 export function ChevronRightIcon({ size = 24, color }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
