@@ -1,12 +1,12 @@
-import type { EquipmentType, Goal } from '@fitness/program-generator';
-import { candidateExercisesForMuscleGroup } from '@fitness/program-generator';
+import type { AddableExercise, EquipmentType, ExperienceLevel, Goal } from '@fitness/program-generator';
+import { allExercisesForEquipment, candidateExercisesForMuscleGroup, getRepScheme, getWeightIncrementKg } from '@fitness/program-generator';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
-import { ChevronDownIcon, ChevronUpIcon, EditIcon, SwapIcon, TrashIcon } from '@/components/icons';
+import { ChevronDownIcon, ChevronUpIcon, EditIcon, PlusIcon, SwapIcon, TrashIcon } from '@/components/icons';
 import { useReducedMotion } from '@/lib/useReducedMotion';
 import type { ScheduledSessionRow } from '@/lib/schedule';
-import { removeDay, replaceExercise, swapExerciseOrder, updateExerciseSets, type SchemaDay, type SchemaExercise } from '@/lib/schemaEditor';
+import { addExercise, removeDay, replaceExercise, swapExerciseOrder, updateExerciseSets, type SchemaDay, type SchemaExercise } from '@/lib/schemaEditor';
 import { fetchSchedulePreview, type SchedulePreview, type SchedulePreviewExercise } from '@/lib/scheduleDayPreview';
 import { colors } from '@/theme/colors';
 import { radii } from '@/theme/radii';
@@ -218,6 +218,43 @@ function ReadOnlyExerciseRow({ exercise }: { exercise: SchedulePreviewExercise }
 }
 
 /**
+ * Picker for "Oefening toevoegen" — the full exercise catalog for the day's
+ * equipment, grouped by muscle group, minus whatever's already on the day
+ * (adding the same exercise twice would just be confusing).
+ */
+function AddExercisePanel({
+  equipment,
+  excludeNames,
+  onPick,
+  isSaving,
+}: {
+  equipment: EquipmentType;
+  excludeNames: Set<string>;
+  onPick: (candidate: AddableExercise) => void;
+  isSaving: boolean;
+}) {
+  const candidates = allExercisesForEquipment(equipment).filter((candidate) => !excludeNames.has(candidate.exerciseName));
+  let lastMuscleGroup: string | null = null;
+
+  return (
+    <View style={styles.editPanel}>
+      {candidates.map((candidate) => {
+        const showHeader = candidate.muscleGroup !== lastMuscleGroup;
+        lastMuscleGroup = candidate.muscleGroup;
+        return (
+          <View key={candidate.exerciseName}>
+            {showHeader && <Text style={styles.muscleGroupHeader}>{candidate.muscleGroup}</Text>}
+            <Pressable style={styles.candidateRow} onPress={() => onPick(candidate)} disabled={isSaving}>
+              <Text style={styles.candidateText}>{candidate.exerciseName}</Text>
+            </Pressable>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
  * Inline info + edit section for the day selected in `WeekCardRow`,
  * rendered directly below it on the Schema page — replaces both the old
  * `/schedule-day/[date]` modal and the separate full-week editable list
@@ -230,6 +267,7 @@ export function ScheduleDayDetail({
   dateIso,
   row,
   goal,
+  experienceLevel,
   schemaDay,
   equipment,
   canRemove,
@@ -239,6 +277,7 @@ export function ScheduleDayDetail({
   dateIso: string;
   row: ScheduledSessionRow | null;
   goal: Goal;
+  experienceLevel: ExperienceLevel;
   /** The editable program day matching `row.programDayId`, or null when there's nothing to edit (rest day, or the row's day no longer belongs to the active program). */
   schemaDay: SchemaDay | null;
   equipment: EquipmentType;
@@ -249,6 +288,8 @@ export function ScheduleDayDetail({
   const [preview, setPreview] = useState<SchedulePreview | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isAddingExercise, setIsAddingExercise] = useState(false);
+  const [isSavingNewExercise, setIsSavingNewExercise] = useState(false);
   const fade = useRef(new Animated.Value(1)).current;
   const reducedMotion = useReducedMotion();
 
@@ -256,6 +297,7 @@ export function ScheduleDayDetail({
     let cancelled = false;
     setIsLoading(true);
     setLoadError(null);
+    setIsAddingExercise(false);
     (async () => {
       try {
         if (!row) {
@@ -310,6 +352,29 @@ export function ScheduleDayDetail({
     ]);
   }
 
+  async function handleAddExercise(day: SchemaDay, candidate: AddableExercise) {
+    setIsSavingNewExercise(true);
+    try {
+      const repScheme = getRepScheme(goal, candidate.exerciseType, experienceLevel);
+      await addExercise(day.id, day.exercises.length, {
+        exerciseName: candidate.exerciseName,
+        muscleGroup: candidate.muscleGroup,
+        exerciseType: candidate.exerciseType,
+        sets: repScheme.sets,
+        repRangeMin: repScheme.repRangeMin,
+        repRangeMax: repScheme.repRangeMax,
+        targetRIR: repScheme.targetRIR,
+        weightIncrementKg: getWeightIncrementKg(equipment, candidate.exerciseType),
+      });
+      setIsAddingExercise(false);
+      await onChanged();
+    } catch (err) {
+      Alert.alert('Toevoegen mislukt', err instanceof Error ? err.message : 'Onbekende fout.');
+    } finally {
+      setIsSavingNewExercise(false);
+    }
+  }
+
   return (
     <View style={styles.container}>
       {isLoading && (
@@ -354,6 +419,23 @@ export function ScheduleDayDetail({
                     />
                   ))
                 : preview.exercises.map((exercise, index) => <ReadOnlyExerciseRow key={`${exercise.exerciseName}-${index}`} exercise={exercise} />)}
+
+              {schemaDay && (
+                <>
+                  <Pressable style={styles.addExerciseButton} onPress={() => setIsAddingExercise((v) => !v)}>
+                    <PlusIcon size={16} color={colors.accent} />
+                    <Text style={styles.addExerciseButtonText}>{isAddingExercise ? 'Annuleren' : 'Oefening toevoegen'}</Text>
+                  </Pressable>
+                  {isAddingExercise && (
+                    <AddExercisePanel
+                      equipment={equipment}
+                      excludeNames={new Set(schemaDay.exercises.map((exercise) => exercise.exerciseName))}
+                      onPick={(candidate) => handleAddExercise(schemaDay, candidate)}
+                      isSaving={isSavingNewExercise}
+                    />
+                  )}
+                </>
+              )}
             </>
           )}
 
@@ -513,5 +595,30 @@ const styles = StyleSheet.create({
   candidateText: {
     color: colors.textPrimary,
     fontSize: 14,
+  },
+  muscleGroupHeader: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  addExerciseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderStyle: 'dashed',
+    marginTop: spacing.md,
+  },
+  addExerciseButtonText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

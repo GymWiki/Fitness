@@ -2091,6 +2091,53 @@ test dekte de verwijderde `DayCard`/`ExerciseRow` rechtstreeks — puur
 presentationele component-herbedrading), `expo export --platform web`
 bouwt zonder fouten.
 
+## "Dag toevoegen" vervangen door "Oefening toevoegen"
+
+*Wat er veranderde.* De globale, niet-dagspecifieke "Dag toevoegen"-knop
+(`addDay` in `schemaEditor.ts`, reactiveerde een inactieve dag of kopieerde
+een hele templatedag) is helemaal verwijderd — geen enkele aanroeper meer,
+dus ook de functie zelf is weg. Ervoor in de plaats: "Oefening toevoegen",
+per-dag, onderaan de oefeningenlijst in `ScheduleDayDetail` (alleen
+zichtbaar als er een bewerkbare `schemaDay` is, dus nooit op een rustdag of
+bij de alleen-lezen fallback). De toegevoegde oefening is een permanente
+`day_exercises`-rij op die specifieke programmadag: komt "Pull A" een
+volgende keer terug in de rotatie, dan staat de oefening er nog steeds bij
+— geen eenmalige toevoeging aan alleen de huidige sessie.
+
+*Nieuwe bouwstenen.*
+- `packages/program-generator/src/exercises.ts`:
+  `allExercisesForEquipment(equipment)` — de volledige oefeningen-catalogus
+  voor het gekozen materiaal, gegroepeerd op spiergroep (in tegenstelling
+  tot `candidateExercisesForMuscleGroup`, die per definitie al een
+  spiergroep als uitgangspunt nodig heeft om iets te kunnen vervangen).
+- `src/lib/schemaEditor.ts`: `addExercise(dayId, nextExerciseOrder, ...)`
+  — voegt één `day_exercises`-rij toe ná de bestaande oefeningen
+  (`exercise_order = huidig aantal + 1`), via `defaultProgressionRuleFor`
+  zodat `progression_rule` nooit NULL is (zelfde bewaakte pad als
+  `insertProgramStructure`).
+- `ScheduleDayDetail.tsx`: `AddExercisePanel` (zelfde
+  picker-visuele-stijl als "Vervang", nu gegroepeerd per spiergroep-header,
+  sluit oefeningen uit die al op de dag staan) + `handleAddExercise`, die
+  sets/reps/RIR bepaalt via `getRepScheme(goal, exerciseType,
+  experienceLevel)` en het gewichtsincrement via `getWeightIncrementKg` —
+  dezelfde functies die de generator zelf gebruikt, dus een handmatig
+  toegevoegde oefening krijgt exact zo'n onderbouwd startpunt als een
+  gegenereerde.
+
+*Scope.* Alleen krachtoefeningen (net als "Vervang" — de bewegingsslots
+in `program-generator` zijn uitsluitend kracht); geen nieuwe cardio-toevoeg-
+stroom. `experienceLevel` is een nieuwe verplichte prop op
+`ScheduleDayDetail`, doorgegeven vanuit `schema.tsx`
+(`profile?.experienceLevel ?? 'intermediate'`).
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 251 tests slagen (37
+adaptatieplanner + 51 programmagenerator [19 in `exercises.test.ts`, 5
+nieuw] + 55 progressie-engine + 108 root `src/lib` [3 nieuw in
+`schemaEditor.test.ts`, mockt Supabase zoals `programs.test.ts` en
+bevestigt dat `progression_rule`/`exercise_order`/`muscle_group`/
+`exercise_type` correct de insert-rij in gaan]), `expo export --platform
+web` bouwt zonder fouten.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen

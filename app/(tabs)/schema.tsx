@@ -1,9 +1,8 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
-import { PlusIcon } from '@/components/icons';
 import { useAuth } from '@/lib/auth';
 import { addDays, startOfIsoWeek } from '@/lib/dateWeek';
 import { todayLocalDateString, toLocalDateString } from '@/lib/dates';
@@ -11,10 +10,9 @@ import { useProfile } from '@/lib/profile';
 import { ensureScheduledWindow, fetchScheduledSessions, type ScheduledSessionRow } from '@/lib/schedule';
 import { ScheduleDayDetail } from '@/components/ScheduleDayDetail';
 import { WeekCardRow } from '@/components/WeekCardRow';
-import { addDay, fetchSchemaProgram, type SchemaProgram } from '@/lib/schemaEditor';
+import { fetchSchemaProgram, type SchemaProgram } from '@/lib/schemaEditor';
 import { colors } from '@/theme/colors';
 import { layout } from '@/theme/layout';
-import { radii } from '@/theme/radii';
 import { spacing } from '@/theme/spacing';
 import { typography } from '@/theme/typography';
 
@@ -28,7 +26,6 @@ export default function SchemaScreen() {
   const [program, setProgram] = useState<SchemaProgram | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isAddingDay, setIsAddingDay] = useState(false);
   const [scheduleRows, setScheduleRows] = useState<ScheduledSessionRow[]>([]);
   const [selectedDate, setSelectedDate] = useState(todayLocalDateString());
 
@@ -65,19 +62,6 @@ export default function SchemaScreen() {
   const selectedRow = scheduleRows.find((row) => row.date === selectedDate) ?? null;
   const selectedSchemaDay = (selectedRow?.programDayId && program?.days.find((day) => day.id === selectedRow.programDayId)) || null;
 
-  async function handleAddDay() {
-    if (!program || activeDays.length === 0) return;
-    setIsAddingDay(true);
-    try {
-      await addDay(program, activeDays[0]!.id);
-      await load();
-    } catch (err) {
-      Alert.alert('Toevoegen mislukt', err instanceof Error ? err.message : 'Onbekende fout.');
-    } finally {
-      setIsAddingDay(false);
-    }
-  }
-
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -112,6 +96,7 @@ export default function SchemaScreen() {
                 dateIso={selectedDate}
                 row={selectedRow}
                 goal={profile?.goal ?? 'mixed'}
+                experienceLevel={profile?.experienceLevel ?? 'intermediate'}
                 schemaDay={selectedSchemaDay}
                 equipment={profile?.equipment ?? 'gym'}
                 canRemove={activeDays.length > 1}
@@ -130,13 +115,6 @@ export default function SchemaScreen() {
                 gokken of vandaag een trainingsdag is.
               </Text>
             </Card>
-          </Pressable>
-        )}
-
-        {!isLoading && !error && program && (
-          <Pressable style={styles.addDayButton} onPress={handleAddDay} disabled={isAddingDay}>
-            <PlusIcon size={18} color={colors.accent} />
-            <Text style={styles.addDayButtonText}>{isAddingDay ? 'Bezig...' : 'Dag toevoegen'}</Text>
           </Pressable>
         )}
       </ScrollView>
@@ -188,22 +166,5 @@ const styles = StyleSheet.create({
   error: {
     color: colors.danger,
     fontSize: 14,
-  },
-  addDayButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.lg,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderStyle: 'dashed',
-    marginTop: spacing.sm,
-  },
-  addDayButtonText: {
-    color: colors.accent,
-    fontSize: 15,
-    fontWeight: '600',
   },
 });

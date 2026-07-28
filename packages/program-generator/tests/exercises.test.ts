@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_MUSCLE_GROUPS, candidateExercisesForMuscleGroup, isHeavyLowerBodyDay, MOVEMENT_SLOTS } from '../src/exercises';
+import { ALL_MUSCLE_GROUPS, allExercisesForEquipment, candidateExercisesForMuscleGroup, isHeavyLowerBodyDay, MOVEMENT_SLOTS } from '../src/exercises';
 
 describe('candidateExercisesForMuscleGroup', () => {
   it('returns every gym variant that targets the same muscle group', () => {
@@ -51,6 +51,46 @@ describe('ALL_MUSCLE_GROUPS', () => {
     const expected = new Set(Object.values(MOVEMENT_SLOTS).map((slot) => slot.muscleGroup));
     expect(new Set(ALL_MUSCLE_GROUPS)).toEqual(expected);
     expect(ALL_MUSCLE_GROUPS.length).toBe(expected.size);
+  });
+});
+
+describe('allExercisesForEquipment', () => {
+  it('returns one entry per distinct exercise name for the given equipment, with no duplicates', () => {
+    const catalog = allExercisesForEquipment('gym');
+    const names = catalog.map((entry) => entry.exerciseName);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('includes exercises from every muscle group, not just one slot', () => {
+    const catalog = allExercisesForEquipment('gym');
+    const muscleGroups = new Set(catalog.map((entry) => entry.muscleGroup));
+    expect(muscleGroups).toEqual(new Set(ALL_MUSCLE_GROUPS));
+  });
+
+  it('respects the requested equipment, same as candidateExercisesForMuscleGroup', () => {
+    const catalog = allExercisesForEquipment('bodyweight');
+    const names = catalog.map((entry) => entry.exerciseName);
+    expect(names).toContain('Push-up');
+    expect(names).not.toContain('Barbell Bench Press');
+  });
+
+  it('carries the correct muscleGroup/exerciseType for each entry, matching MOVEMENT_SLOTS', () => {
+    const catalog = allExercisesForEquipment('gym');
+    const benchPress = catalog.find((entry) => entry.exerciseName === 'Barbell Bench Press');
+    expect(benchPress).toEqual({ muscleGroup: 'Borst', exerciseType: 'compound', exerciseName: 'Barbell Bench Press' });
+  });
+
+  it('groups entries by muscle group (never interleaved) so a UI can section them without re-sorting', () => {
+    const catalog = allExercisesForEquipment('gym');
+    const seenGroups = new Set<string>();
+    let previousGroup: string | null = null;
+    for (const entry of catalog) {
+      if (entry.muscleGroup !== previousGroup) {
+        expect(seenGroups.has(entry.muscleGroup)).toBe(false); // a group reappearing after another started means it's split, not grouped
+        seenGroups.add(entry.muscleGroup);
+        previousGroup = entry.muscleGroup;
+      }
+    }
   });
 });
 

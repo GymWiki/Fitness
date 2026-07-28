@@ -1,4 +1,4 @@
-import { assertProgressionRules } from './programs';
+import { assertProgressionRules, defaultProgressionRuleFor } from './programs';
 import { supabase } from './supabase';
 
 export interface SchemaExercise {
@@ -121,47 +121,39 @@ export async function removeDay(dayId: string): Promise<void> {
   if (error) throw error;
 }
 
+export interface NewExerciseInput {
+  exerciseName: string;
+  muscleGroup: string;
+  exerciseType: 'compound' | 'isolation';
+  sets: number;
+  repRangeMin: number;
+  repRangeMax: number;
+  targetRIR: number;
+  weightIncrementKg: number;
+}
+
 /**
- * Adds a day back to the schedule. Prefers reactivating the lowest-order
- * previously-removed day (the exact inverse of `removeDay`, so its exercise
- * history is still there); only creates a brand new day + a copy of the
- * given template day's exercises if there's nothing to reactivate.
+ * Appends a new strength exercise to the end of a day — permanently, since
+ * it's a real `day_exercises` row: the next time this day's slot comes
+ * around in the rotation (e.g. the next "Pull A"), the exercise is still
+ * there. `nextExerciseOrder` is the day's current exercise count (the new
+ * row goes right after the last one).
  */
-export async function addDay(program: SchemaProgram, templateDayId: string): Promise<void> {
-  const inactiveDays = program.days.filter((day) => !day.isActive).sort((a, b) => a.dayOrder - b.dayOrder);
-  if (inactiveDays.length > 0) {
-    const { error } = await supabase.from('program_days').update({ is_active: true }).eq('id', inactiveDays[0]!.id);
-    if (error) throw error;
-    return;
-  }
-
-  const templateDay = program.days.find((day) => day.id === templateDayId);
-  if (!templateDay) throw new Error('Template day not found');
-
-  const nextDayOrder = Math.max(...program.days.map((day) => day.dayOrder)) + 1;
-  const { data: newDay, error: dayError } = await supabase
-    .from('program_days')
-    .insert({ program_id: program.id, day_order: nextDayOrder, name: `Nieuwe dag (kopie van ${templateDay.name})` })
-    .select('id')
-    .single();
-  if (dayError) throw dayError;
-
-  const exerciseRows = templateDay.exercises.map((exercise) => ({
-    program_day_id: newDay.id,
-    exercise_order: exercise.exerciseOrder,
+export async function addExercise(dayId: string, nextExerciseOrder: number, exercise: NewExerciseInput): Promise<void> {
+  const row = {
+    program_day_id: dayId,
+    exercise_order: nextExerciseOrder,
     exercise_name: exercise.exerciseName,
     muscle_group: exercise.muscleGroup,
-    kind: exercise.kind,
+    exercise_type: exercise.exerciseType,
+    kind: 'strength' as const,
     sets: exercise.sets,
     rep_range_min: exercise.repRangeMin,
     rep_range_max: exercise.repRangeMax,
     target_rir: exercise.targetRIR,
-    // The template day's own progression_rule isn't carried in SchemaExercise, so this
-    // is a fresh default rather than a copy — matches the DB default `'{}'::jsonb`, set
-    // explicitly (not omitted) so a mixed-kind batch can never NULL-fill it out from under us.
-    progression_rule: {},
-  }));
-  assertProgressionRules(exerciseRows);
-  const { error: exercisesError } = await supabase.from('day_exercises').insert(exerciseRows);
-  if (exercisesError) throw exercisesError;
+    progression_rule: defaultProgressionRuleFor({ kind: 'strength', weightIncrementKg: exercise.weightIncrementKg }),
+  };
+  assertProgressionRules([row]);
+  const { error } = await supabase.from('day_exercises').insert(row);
+  if (error) throw error;
 }

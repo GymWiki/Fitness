@@ -178,3 +178,30 @@ export function candidateExercisesForMuscleGroup(
   if (excludeName) names.delete(excludeName);
   return [...names].sort();
 }
+
+export interface AddableExercise {
+  muscleGroup: string;
+  exerciseType: ExerciseType;
+  exerciseName: string;
+}
+
+/**
+ * The full exercise catalog for the given equipment, one entry per distinct
+ * name, grouped by muscle group — what the Schema tab's "Oefening
+ * toevoegen" picker offers. Unlike `candidateExercisesForMuscleGroup` this
+ * isn't scoped to a single muscle group (there's no "current" exercise to
+ * match when adding a brand new one to a day).
+ */
+export function allExercisesForEquipment(equipment: EquipmentType): AddableExercise[] {
+  const seen = new Set<string>();
+  const result: AddableExercise[] = [];
+  for (const slot of Object.values(MOVEMENT_SLOTS)) {
+    for (const variant of Object.values(slot.variants)) {
+      const exerciseName = variant[equipment];
+      if (seen.has(exerciseName)) continue;
+      seen.add(exerciseName);
+      result.push({ muscleGroup: slot.muscleGroup, exerciseType: slot.exerciseType, exerciseName });
+    }
+  }
+  return result.sort((a, b) => a.muscleGroup.localeCompare(b.muscleGroup) || a.exerciseName.localeCompare(b.exerciseName));
+}
