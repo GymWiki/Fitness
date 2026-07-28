@@ -1,26 +1,51 @@
 @import "tailwindcss";
 
+/*
+ * Dark-first palette, ported 1:1 from src/theme/colors.ts (the Expo app's
+ * design system) — this is a gym-use app, dark is the default, not a
+ * prefers-color-scheme variant. No light theme exists on either platform.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --color-background: #0b0f14;
+  --color-surface: #151b23;
+  --color-surface-elevated: #1b222c;
+  --color-border: #232b36;
+  --color-border-strong: #2e3947;
+  --color-text-primary: #f5f7fa;
+  --color-text-secondary: #9aa5b1;
+  --color-text-tertiary: #808d9e;
+  --color-accent: #4ade80;
+  --color-accent-muted: rgba(74, 222, 128, 0.14);
+  --color-warning: #fbbf24;
+  --color-warning-muted: rgba(251, 191, 36, 0.14);
+  --color-danger: #f87171;
+  --color-danger-muted: rgba(248, 113, 113, 0.14);
+  --color-progress: #60a5fa;
+  --color-progress-muted: rgba(96, 165, 250, 0.14);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--color-background);
+  --color-surface: var(--color-surface);
+  --color-surface-elevated: var(--color-surface-elevated);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-tertiary: var(--color-text-tertiary);
+  --color-accent: var(--color-accent);
+  --color-accent-muted: var(--color-accent-muted);
+  --color-warning: var(--color-warning);
+  --color-warning-muted: var(--color-warning-muted);
+  --color-danger: var(--color-danger);
+  --color-danger-muted: var(--color-danger-muted);
+  --color-progress: var(--color-progress);
+  --color-progress-muted: var(--color-progress-muted);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-background);
+  color: var(--color-text-primary);
 }
