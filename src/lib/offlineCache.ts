@@ -2,12 +2,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CACHE_PREFIX = 'read_cache_v1:';
 
-async function readCache<T>(key: string): Promise<T | null> {
+/** Exported for `useCachedData` (stale-while-revalidate hook): lets a component peek at a value before deciding whether to fetch. */
+export async function readCache<T>(key: string): Promise<T | null> {
   const raw = await AsyncStorage.getItem(CACHE_PREFIX + key);
   return raw ? (JSON.parse(raw) as T) : null;
 }
 
-async function writeCache<T>(key: string, value: T): Promise<void> {
+/** Exported for `useCachedData` — see `readCache`. */
+export async function writeCache<T>(key: string, value: T): Promise<void> {
   await AsyncStorage.setItem(CACHE_PREFIX + key, JSON.stringify(value));
 }
 

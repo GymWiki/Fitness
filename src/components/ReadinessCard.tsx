@@ -1,9 +1,11 @@
 import type { RecoveryEstimate } from '@fitness/progression-engine';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { compareMuscleRecoveryPriority } from '@/lib/recoveryReadiness';
 import { fetchAllMuscleGroupRecoveryEstimates } from '@/lib/recovery';
+import { todayLocalDateString } from '@/lib/dates';
+import { useCachedData } from '@/lib/useCachedData';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { CheckIcon } from './icons';
@@ -13,29 +15,16 @@ import { MuscleRecoveryRing } from './MuscleRecoveryRing';
 const COMPACT_RING_COUNT = 4;
 const COMPACT_RING_SIZE = 44;
 
+/** `Map` doesn't round-trip through `JSON.stringify` (the cache layer's storage format) — cache as entries, rebuild the Map for use. */
+async function loadReadinessEntries(userId: string): Promise<Array<[string, RecoveryEstimate]>> {
+  const estimates = await fetchAllMuscleGroupRecoveryEstimates(userId);
+  return [...estimates.entries()];
+}
+
 export function ReadinessCard({ userId }: { userId: string }) {
   const router = useRouter();
-  const [estimates, setEstimates] = useState<Map<string, RecoveryEstimate> | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      setEstimates(await fetchAllMuscleGroupRecoveryEstimates(userId));
-    } catch {
-      setError('Kon je herstelstatus niet laden.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [userId]);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
-  );
+  const { data: entries, isLoading, error } = useCachedData(`readiness:${userId}:${todayLocalDateString()}`, () => loadReadinessEntries(userId));
+  const estimates = useMemo(() => (entries ? new Map(entries) : null), [entries]);
 
   const topMuscleGroups = estimates
     ? [...estimates.entries()].sort(compareMuscleRecoveryPriority).slice(0, COMPACT_RING_COUNT)

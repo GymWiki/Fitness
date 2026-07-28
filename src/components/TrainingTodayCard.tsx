@@ -1,9 +1,9 @@
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useRouter } from 'expo-router';
 import { StyleSheet, Text } from 'react-native';
 import { fetchActiveProgram, type ActiveProgram, type ActiveProgramDay } from '@/lib/programs';
 import { ensureScheduledWindow, fetchScheduledSessions, type ScheduledSessionRow } from '@/lib/schedule';
 import { todayLocalDateString } from '@/lib/dates';
+import { useCachedData } from '@/lib/useCachedData';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { CalendarIcon } from './icons';
@@ -22,42 +22,33 @@ function describeDay(day: ActiveProgramDay): string {
   return muscleGroups.length > 0 ? `${exerciseCount} ${exerciseLabel} · ${joinWithEn(muscleGroups.map((mg) => mg.toLowerCase()))}` : `${exerciseCount} ${exerciseLabel}`;
 }
 
+interface TrainingTodayData {
+  program: ActiveProgram | null;
+  // undefined = no calendar schedule available (older account, or fetch failed) -> fall back to the day-count rotation.
+  scheduledToday: ScheduledSessionRow | null | undefined;
+}
+
+async function loadTrainingTodayData(userId: string): Promise<TrainingTodayData> {
+  const program = await fetchActiveProgram(userId);
+  let scheduledToday: ScheduledSessionRow | null | undefined;
+  try {
+    await ensureScheduledWindow(userId);
+    const today = todayLocalDateString();
+    const rows = await fetchScheduledSessions(userId, today, today);
+    scheduledToday = rows[0] ?? null;
+  } catch {
+    scheduledToday = undefined; // calendar planning unavailable right now — fall back silently, this section never blocks on it
+  }
+  return { program, scheduledToday };
+}
+
 export function TrainingTodayCard({ userId }: { userId: string }) {
   const router = useRouter();
-  const [program, setProgram] = useState<ActiveProgram | null>(null);
-  // undefined = no calendar schedule available (older account, or fetch failed) -> fall back to the day-count rotation.
-  const [scheduledToday, setScheduledToday] = useState<ScheduledSessionRow | null | undefined>(undefined);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Keyed by today's date so a cached value never leaks into the next day (e.g. yesterday's "done" badge).
+  const { data, isLoading, error } = useCachedData(`training_today:${userId}:${todayLocalDateString()}`, () => loadTrainingTodayData(userId));
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      setProgram(await fetchActiveProgram(userId));
-    } catch {
-      setError('Kon je training niet laden.');
-      setIsLoading(false);
-      return;
-    }
-    try {
-      await ensureScheduledWindow(userId);
-      const today = todayLocalDateString();
-      const rows = await fetchScheduledSessions(userId, today, today);
-      setScheduledToday(rows[0] ?? null);
-    } catch {
-      setScheduledToday(undefined); // calendar planning unavailable right now — fall back silently, this section never blocks on it
-    } finally {
-      setIsLoading(false);
-    }
-  }, [userId]);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
-  );
-
+  const program = data?.program ?? null;
+  const scheduledToday = data?.scheduledToday;
   const hasSchedule = scheduledToday !== undefined;
   const isRestDayScheduled = hasSchedule && scheduledToday?.status === 'rest';
   const isDoneToday = hasSchedule && scheduledToday?.status === 'done';

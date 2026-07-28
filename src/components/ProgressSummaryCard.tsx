@@ -1,39 +1,27 @@
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { fetchMonthlyWorkoutCount, fetchWeeklyVolume } from '@/lib/progressStats';
+import { todayLocalDateString } from '@/lib/dates';
+import { useCachedData } from '@/lib/useCachedData';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { DashboardCardShell } from './DashboardCardShell';
 import { TrendingUpIcon } from './icons';
 import { StatTile } from './StatTile';
 
+interface ProgressSummaryData {
+  weeklyVolume: number;
+  monthlyWorkouts: number;
+}
+
+async function loadProgressSummaryData(userId: string): Promise<ProgressSummaryData> {
+  const [weeklyVolume, monthlyWorkouts] = await Promise.all([fetchWeeklyVolume(userId), fetchMonthlyWorkoutCount(userId)]);
+  return { weeklyVolume, monthlyWorkouts };
+}
+
 export function ProgressSummaryCard({ userId }: { userId: string }) {
   const router = useRouter();
-  const [weeklyVolume, setWeeklyVolume] = useState<number | null>(null);
-  const [monthlyWorkouts, setMonthlyWorkouts] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const [volume, monthly] = await Promise.all([fetchWeeklyVolume(userId), fetchMonthlyWorkoutCount(userId)]);
-      setWeeklyVolume(volume);
-      setMonthlyWorkouts(monthly);
-    } catch {
-      setError('Kon je progressie niet laden.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [userId]);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
-  );
+  const { data, isLoading, error } = useCachedData(`progress_summary:${userId}:${todayLocalDateString()}`, () => loadProgressSummaryData(userId));
 
   return (
     <DashboardCardShell
@@ -45,8 +33,8 @@ export function ProgressSummaryCard({ userId }: { userId: string }) {
       ctaLabel="Bekijk Progressie"
     >
       <View style={styles.statsRow}>
-        <StatTile label="Volume deze week" value={weeklyVolume !== null ? `${Math.round(weeklyVolume).toLocaleString('nl-NL')} kg` : '–'} />
-        <StatTile label="Trainingen deze maand" value={monthlyWorkouts !== null ? String(monthlyWorkouts) : '–'} />
+        <StatTile label="Volume deze week" value={data ? `${Math.round(data.weeklyVolume).toLocaleString('nl-NL')} kg` : '–'} />
+        <StatTile label="Trainingen deze maand" value={data ? String(data.monthlyWorkouts) : '–'} />
       </View>
     </DashboardCardShell>
   );

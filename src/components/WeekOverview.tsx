@@ -1,5 +1,3 @@
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { addDays, startOfIsoWeek } from '@/lib/dateWeek';
 import { toLocalDateString } from '@/lib/dates';
@@ -8,6 +6,7 @@ import { fetchActiveProgram } from '@/lib/programs';
 import { fetchWorkoutDates } from '@/lib/progressStats';
 import { ensureScheduledWindow, fetchScheduledSessions } from '@/lib/schedule';
 import { computeWeekStrip, scheduleToWeekStrip, type WeekStripDay } from '@/lib/weekStrip';
+import { useCachedData } from '@/lib/useCachedData';
 import { colors } from '@/theme/colors';
 import { radii } from '@/theme/radii';
 import { spacing } from '@/theme/spacing';
@@ -42,52 +41,47 @@ function StripDot({ day }: { day: WeekStripDay }) {
   );
 }
 
+interface WeekOverviewData {
+  streak: number | null;
+  weekStrip: WeekStripDay[];
+}
+
+async function loadWeekOverviewData(userId: string): Promise<WeekOverviewData> {
+  const [program, workoutDates] = await Promise.all([fetchActiveProgram(userId), fetchWorkoutDates(userId)]);
+  const daysPerWeek = program?.days.length ?? 0;
+  const streak = calculateStreak(workoutDates, daysPerWeek);
+
+  // Prefers the real calendar schedule (exactly what "Vandaag" and the schema page also
+  // read) over the workoutDates heuristic, so the strip never shows a second, possibly-
+  // divergent guess. Falls back silently when no schedule exists yet (older accounts).
+  try {
+    await ensureScheduledWindow(userId);
+    const weekStart = startOfIsoWeek(new Date());
+    const weekEnd = addDays(weekStart, 6);
+    const rows = await fetchScheduledSessions(userId, toLocalDateString(weekStart), toLocalDateString(weekEnd));
+    if (rows.length > 0) {
+      return { streak, weekStrip: scheduleToWeekStrip(rows) };
+    }
+  } catch {
+    // fall through to the heuristic below
+  }
+  return { streak, weekStrip: computeWeekStrip(workoutDates, daysPerWeek) };
+}
+
 /**
  * Streak line + 7-day week strip for the top of the "Vandaag" dashboard.
  * Self-fetching (own loading/error state) so a slow query here never
  * blocks the four cards below it — same "independent card" treatment as
- * `TrainingTodayCard`/`ReadinessCard`/etc.
+ * `TrainingTodayCard`/`ReadinessCard`/etc. Uses `useCachedData` so a
+ * refocus repaints instantly from the last-known result instead of
+ * blanking out while it refetches.
  */
 export function WeekOverview({ userId }: { userId: string }) {
-  const [streak, setStreak] = useState<number | null>(null);
-  const [weekStrip, setWeekStrip] = useState<WeekStripDay[] | null>(null);
+  // Keyed by today's date so a stale cache from a previous day can never paint over "today".
+  const { data } = useCachedData(`week_overview:${userId}:${toLocalDateString(new Date())}`, () => loadWeekOverviewData(userId));
 
-  const load = useCallback(async () => {
-    try {
-      const [program, workoutDates] = await Promise.all([fetchActiveProgram(userId), fetchWorkoutDates(userId)]);
-      const daysPerWeek = program?.days.length ?? 0;
-      setStreak(calculateStreak(workoutDates, daysPerWeek));
-
-      // Prefers the real calendar schedule (exactly what "Vandaag" and the schema page also
-      // read) over the workoutDates heuristic, so the strip never shows a second, possibly-
-      // divergent guess. Falls back silently when no schedule exists yet (older accounts).
-      try {
-        await ensureScheduledWindow(userId);
-        const weekStart = startOfIsoWeek(new Date());
-        const weekEnd = addDays(weekStart, 6);
-        const rows = await fetchScheduledSessions(userId, toLocalDateString(weekStart), toLocalDateString(weekEnd));
-        if (rows.length > 0) {
-          setWeekStrip(scheduleToWeekStrip(rows));
-          return;
-        }
-      } catch {
-        // fall through to the heuristic below
-      }
-      setWeekStrip(computeWeekStrip(workoutDates, daysPerWeek));
-    } catch {
-      // Fails soft: the streak/week-strip is a motivational nicety, never a blocker for the rest of the dashboard.
-      setStreak(null);
-      setWeekStrip(null);
-    }
-  }, [userId]);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
-  );
-
-  if (weekStrip === null) return null;
+  if (!data || data.weekStrip.length === 0) return null;
+  const { streak, weekStrip } = data;
 
   return (
     <View style={styles.container}>

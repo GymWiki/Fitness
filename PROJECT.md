@@ -2200,6 +2200,60 @@ git-historie en de eerdere PROJECT.md-entry), geen bug.
 (ongewijzigd — dit was zuiver flow-/tekstwerk, geen nieuwe testbare
 logica), `expo export --platform web --clear` bouwt zonder fouten.
 
+## Prestatie: dashboardkaarten voelden traag door herhaalde spinners, niet door trage netwerkcalls
+
+*Diagnose.* Gebruikersmelding: "de cards laden best lang bij het openen
+van een pagina". `src/lib/offlineCache.ts`'s `fetchWithCache` (al langer
+gebruikt door `fetchActiveProgram`/`fetchWeeklyVolume`/
+`fetchMonthlyWorkoutCount`/etc.) is *netwerk-eerst*: hij wacht altijd de
+volledige netwerkcall af en valt pas terug op de cache bij een fout —
+puur een offline-vangnet, geen snelheidswinst. De echte oorzaak zat in
+de dashboardkaarten zelf: `TrainingTodayCard`/`ProgressSummaryCard`/
+`ReadinessCard`/`WeekOverview` riepen elk `setIsLoading(true)` aan het
+begin van hun `load()`, en die `load()` draaide via `useFocusEffect` bij
+*elke* focus — dus ook wanneer je alleen van tabblad wisselde en
+terugkwam, met data die al op het scherm stond. Elke tabwissel blankte
+zo de kaart terug naar een spinner, ook al was er niets nieuws te halen.
+
+*Fix.* Nieuwe `src/lib/useCachedData.ts`: een stale-while-revalidate-hook.
+Bij de eerste keer dat een `key` ooit is opgehaald (deze sessie of een
+eerdere, via de nu geëxporteerde `readCache`/`writeCache` uit
+`offlineCache.ts`) toont hij die waarde direct — geen spinner — en
+ververst hij op de achtergrond stil zodra de echte fetch terugkomt. Een
+spinner verschijnt alleen als er écht nog niets te tonen is (geen cache,
+geen eerdere data in het geheugen). Een mislukte achtergrond-ververing
+blankt nooit iets weg dat al op het scherm staat — de bestaande
+sync-status-badge blijft verantwoordelijk voor connectiviteitsfeedback,
+niet de kaart zelf. `fetcher` wordt via een ref gelezen zodat een
+component elke render gewoon een nieuwe inline closure mag doorgeven
+zonder de effect opnieuw te laten afvuren — alleen `key` doet dat.
+
+*Toegepast op de vier Vandaag-kaarten* (`TrainingTodayCard`,
+`ProgressSummaryCard`, `ReadinessCard`, `WeekOverview`) — elk kreeg zijn
+eigen samengestelde fetch-functie (bv. `loadTrainingTodayData`) die de
+bestaande, ongewijzigde data-laagfuncties aanroept, met een cache-key
+die het datum-onderdeel bevat (`training_today:${userId}:${vandaag}`)
+zodat een cache van gisteren nooit per ongeluk voor vandaag doorgaat
+(bv. een "Getraind vandaag ✓"-badge die eigenlijk van gisteren was).
+`ReadinessCard` cachet de `Map<string, RecoveryEstimate>` als
+entries-array, omdat `Map` niet door `JSON.stringify` heen komt.
+
+*Afbakening.* Geen wijziging aan wélke data wordt opgehaald of hoe die
+berekend wordt — uitsluitend hoe/wanneer die getoond wordt. De
+onderliggende `fetchActiveProgram` e.a. blijven ongewijzigd (en dus ook
+hun eigen `fetchWithCache`-vangnet voor echt-offline gebruik). Niet
+toegepast op Schema/Progressie/Readiness-detailscherm — die hebben
+dezelfde herhaalde-spinner-eigenschap, maar de melding ging specifiek
+over "de cards"; hetzelfde patroon (`useCachedData`) is nu beschikbaar
+om daar later ook toe te passen.
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 251 tests slagen
+(ongewijzigd — dit is presentationele/hook-herbedrading zonder nieuwe
+pure logica; geen React-hook-testinfrastructuur aanwezig in dit project,
+consistent met de andere ongeteste hooks `useSyncStatus`/
+`useReducedMotion`), `expo export --platform web --clear` bouwt zonder
+fouten.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen
