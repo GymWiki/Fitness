@@ -108,9 +108,10 @@ async function buildCardioPreview(exercise: WorkoutExercise, goal: Goal): Promis
 }
 
 /**
- * Read-only preview of a scheduled day for the week-card detail modal —
- * reuses the same data layer and progression-engine calls the workout
- * screen uses (`fetchProgramDayWithExercises`, `getStrengthAdvice`,
+ * Read-only preview of a scheduled day for the inline info section below
+ * the Schema page's week-card row — reuses the same data layer and
+ * progression-engine calls the workout screen uses
+ * (`fetchProgramDayWithExercises`, `getStrengthAdvice`,
  * `computeWeeklyDistribution`/`adviseNextCardioType`/
  * `adviseCardioProgression`), just for every exercise on the day at once
  * instead of one at a time. Returns `null` when the scheduled program day

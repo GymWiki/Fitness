@@ -29,10 +29,11 @@ function TypeIcon({ kind, color }: { kind: ScheduleCardDay['programDayKind']; co
  * conveyed by more than color alone (per the app's contrast/shape
  * accessibility pass elsewhere): 'done' fills the card in accent, 'missed'
  * gets a dedicated corner cross mark (never the same visual as 'rest'), and
- * 'today' always gets a thicker border on top of whatever status color
- * applies — so today is identifiable at a glance regardless of status.
+ * a small dot next to the date marks 'today' regardless of selection state.
+ * Tapping a card selects it (thick accent border) instead of navigating —
+ * the info section below the row re-renders for whichever day is selected.
  */
-export function ScheduleDayCard({ day, onPress }: { day: ScheduleCardDay; onPress: () => void }) {
+export function ScheduleDayCard({ day, isSelected, onPress }: { day: ScheduleCardDay; isSelected: boolean; onPress: () => void }) {
   const label = day.programDayName ?? 'Rust';
   const iconColor = day.status === 'done' ? colors.accent : day.status === 'missed' ? colors.danger : colors.textSecondary;
 
@@ -43,13 +44,17 @@ export function ScheduleDayCard({ day, onPress }: { day: ScheduleCardDay; onPres
         styles.card,
         day.status === 'done' && styles.cardDone,
         day.status === 'missed' && styles.cardMissed,
-        day.isToday && styles.cardToday,
+        isSelected && styles.cardSelected,
         pressed && styles.cardPressed,
       ]}
       accessibilityRole="button"
+      accessibilityState={{ selected: isSelected }}
       accessibilityLabel={`${formatShortWeekdayDate(day.date)}${day.isToday ? ' (vandaag)' : ''}: ${label}, ${day.status}`}
     >
-      <Text style={styles.date}>{formatShortWeekdayDate(day.date)}</Text>
+      <View style={styles.dateRow}>
+        <Text style={styles.date}>{formatShortWeekdayDate(day.date)}</Text>
+        {day.isToday && <View style={styles.todayDot} />}
+      </View>
       <View style={styles.iconWrap}>
         <TypeIcon kind={day.programDayKind} color={iconColor} />
         {day.status === 'missed' && (
@@ -86,17 +91,28 @@ const styles = StyleSheet.create({
     backgroundColor: colors.dangerMuted,
     borderColor: colors.danger,
   },
-  cardToday: {
-    borderWidth: 2,
-    borderColor: colors.textPrimary,
+  cardSelected: {
+    borderWidth: 3,
+    borderColor: colors.accent,
   },
   cardPressed: {
     opacity: 0.7,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
   },
   date: {
     color: colors.textTertiary,
     fontSize: 11,
     fontWeight: '600',
+  },
+  todayDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.textPrimary,
   },
   iconWrap: {
     marginVertical: spacing.xs,

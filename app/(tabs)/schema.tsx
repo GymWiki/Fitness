@@ -9,9 +9,10 @@ import { EmptyState } from '@/components/EmptyState';
 import { ChevronDownIcon, ChevronUpIcon, EditIcon, PlusIcon, SwapIcon, TrashIcon } from '@/components/icons';
 import { useAuth } from '@/lib/auth';
 import { addDays, startOfIsoWeek } from '@/lib/dateWeek';
-import { toLocalDateString } from '@/lib/dates';
+import { todayLocalDateString, toLocalDateString } from '@/lib/dates';
 import { useProfile } from '@/lib/profile';
 import { ensureScheduledWindow, fetchScheduledSessions, type ScheduledSessionRow } from '@/lib/schedule';
+import { ScheduleDayDetail } from '@/components/ScheduleDayDetail';
 import { WeekCardRow } from '@/components/WeekCardRow';
 import {
   addDay,
@@ -258,6 +259,7 @@ export default function SchemaScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isAddingDay, setIsAddingDay] = useState(false);
   const [scheduleRows, setScheduleRows] = useState<ScheduledSessionRow[]>([]);
+  const [selectedDate, setSelectedDate] = useState(todayLocalDateString());
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -328,7 +330,19 @@ export default function SchemaScreen() {
           <EmptyState title="Nog geen programma" body="Zodra je de intake afrondt, kun je hier je schema bekijken en aanpassen." />
         )}
 
-        {!isLoading && !error && program && scheduleRows.length > 0 && <WeekCardRow rows={scheduleRows} />}
+        {!isLoading && !error && program && scheduleRows.length > 0 && (
+          <>
+            <WeekCardRow rows={scheduleRows} selectedDateIso={selectedDate} onSelectDay={setSelectedDate} />
+            {session && (
+              <ScheduleDayDetail
+                userId={session.user.id}
+                dateIso={selectedDate}
+                row={scheduleRows.find((row) => row.date === selectedDate) ?? null}
+                goal={profile?.goal ?? 'mixed'}
+              />
+            )}
+          </>
+        )}
 
         {!isLoading && !error && program && scheduleRows.length === 0 && !profile?.preferredWeekdays && (
           <Pressable onPress={() => router.push('/(tabs)/profile')}>

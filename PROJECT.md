@@ -1998,6 +1998,51 @@ UI-code nodig: zowel de onboarding-samenvatting als
 `day.cardioSessions` per dag naast elkaar, dus een dag met beide toont
 en persisteert meteen correct.
 
+## Correctie: dag-info inline op de Schema-pagina i.p.v. bottom sheet
+
+*Wat er veranderde.* Een tik op een kaart in `WeekCardRow` opende voorheen
+de modal-route `app/schedule-day/[date].tsx` (`presentation: 'modal'` in
+`app/_layout.tsx`) — een bottom sheet die de pagina verliet. Die route is
+verwijderd (bestand + registratie); de inhoud (`fetchSchedulePreview`,
+zelfde advies-/cardio-uitleg als het workout-scherm) leeft nu in een
+nieuwe presentational component `src/components/ScheduleDayDetail.tsx`,
+direct onder de kaartenrij op dezelfde pagina.
+
+*Selectie.* `WeekCardRow` kreeg `selectedDateIso`/`onSelectDay`-props
+in plaats van een interne `router.push`; de kaart-tik selecteert nu een
+dag lokaal op de Schema-pagina (`app/(tabs)/schema.tsx`) in plaats van te
+navigeren. `ScheduleDayCard` kreeg een `isSelected`-prop met een eigen
+visuele stijl (dikke accentrand, 3px) los van de bestaande status-stijlen
+(`done`/`missed`); de vroegere "vandaag"-rand is vervangen door een klein
+stipje naast de datum, zodat "vandaag" en "geselecteerd" nooit met
+elkaar botsen of verward kunnen worden. Standaardselectie bij het openen
+van de pagina is vandaag (`todayLocalDateString()`); de gekozen dag komt
+uit de al gefetchte `scheduleRows` (geen extra databasecall) en valt —
+net als de kaart zelf — terug op een rustdag-weergave als er voor die
+datum nog geen rij bestaat.
+
+*Overgang.* `ScheduleDayDetail` faded zacht in (`Animated.timing`,
+220ms, `opacity` 0.3 → 1) bij het wisselen van geselecteerde dag,
+overgeslagen bij `useReducedMotion()` — zelfde patroon als
+`RecoveryCurveChart`. Geen page-reload: alleen de sectie zelf herrendert.
+
+*Afbakening gerespecteerd.* De kaartenrij, de kalenderplanning
+(`distributeSessions`/`ensureScheduledWindow`) en alle trainings-/
+cardio-berekeningen zijn ongewijzigd. De losstaande, bewerkbare
+programma-dagenlijst (`activeDays.map(DayCard)`, met sets/reps bewerken
+en oefeningen vervangen) blijft ook ongewijzigd — dat is een ander
+onderdeel (het programma-sjabloon bewerken) dan de datumgebonden
+dag-info die dit ticket regelt.
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 243 tests slagen (geen
+nieuwe/kapotte tests — dit was presentationele component-herbedrading,
+geen pure logica), `expo export --platform web` bouwt zonder fouten.
+Niet geverifieerd: een daadwerkelijke ingelogde klik-rondgang (geen
+testaccount/browsersessie beschikbaar in dit sandbox-environment, zelfde
+beperking als eerder bij de kaartenrij zelf) — in plaats daarvan
+bevestigd via bron-onderzoek dat `ScheduleDayDetail` exact dezelfde
+databronnen en renderlogica gebruikt als de verwijderde modal.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen

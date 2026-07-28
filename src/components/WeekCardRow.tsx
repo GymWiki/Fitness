@@ -1,4 +1,3 @@
-import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { addDays, startOfIsoWeek } from '@/lib/dateWeek';
@@ -14,10 +13,18 @@ import { ScheduleDayCard, SCHEDULE_DAY_CARD_STRIDE } from './ScheduleDayCard';
  * comes from the same `fetchScheduledSessions` call the Schema page already
  * makes (now widened to a week-aligned 14-day range), so there's no second
  * fetch here. Only the "which of the two fetched weeks is shown" toggle is
- * local UI state.
+ * local UI state — which day is selected lives with the caller, since the
+ * info section it drives renders outside this row.
  */
-export function WeekCardRow({ rows }: { rows: ScheduledSessionRow[] }) {
-  const router = useRouter();
+export function WeekCardRow({
+  rows,
+  selectedDateIso,
+  onSelectDay,
+}: {
+  rows: ScheduledSessionRow[];
+  selectedDateIso: string;
+  onSelectDay: (dateIso: string) => void;
+}) {
   const scrollRef = useRef<ScrollView>(null);
   const hasAutoScrolled = useRef(false);
   const [weekOffset, setWeekOffset] = useState<0 | 1>(0);
@@ -56,7 +63,12 @@ export function WeekCardRow({ rows }: { rows: ScheduledSessionRow[] }) {
         onLayout={scrollToToday}
       >
         {cards.map((card) => (
-          <ScheduleDayCard key={card.dateIso} day={card} onPress={() => router.push(`/schedule-day/${card.dateIso}`)} />
+          <ScheduleDayCard
+            key={card.dateIso}
+            day={card}
+            isSelected={card.dateIso === selectedDateIso}
+            onPress={() => onSelectDay(card.dateIso)}
+          />
         ))}
       </ScrollView>
     </View>
