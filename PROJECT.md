@@ -2393,6 +2393,68 @@ zijn eigen `useCachedData`-aanroep in zijn eigen component-`useEffect`, dus
 een hangende fetch in de ene kaart heeft geen enkel codepad dat de andere
 kaarten's state raakt.
 
+## Bugfix: wit scherm bij openen van de app (dev-server startte niet)
+
+*Melding.* Direct bij het openen van de app in de browser — nog vóór het
+inlogscherm — was alleen een wit scherm te zien.
+
+*Diagnose.* `npx expo start --web` crashte meteen bij het opstarten met
+`Error: Cannot find module 'expo-router/internal/routing'`, vanuit
+`@expo/cli`'s eigen `router-server`-pakket (nodig voor typed-routes-generatie
+tijdens dev-server-opstart). Root cause: `package.json` had
+`"expo-router": "^6.0.24"` — de oude, pre-SDK-uitlijnde versienummering —
+terwijl de rest van de dependencies (`expo` `~57.0.7`, `expo-crypto`
+`^57.0.1`, `expo-splash-screen` `^57.0.4`, `expo-status-bar` `~57.0.1`) al op
+Expo SDK 57 stond. Sinds `expo-router@55` volgt het pakket dezelfde
+SDK-versienummering als `expo` zelf (`55.x`/`56.x`/`57.x` i.p.v. het oude
+`6.x`) — deze afwijking staat er sinds de allereerste commit van dit project
+in (`git log -p -- package.json` bevestigt `^6.0.24` vanaf het begin), dus is
+geen regressie van een eerdere stap in dit project.
+
+Dit bleef de hele projectgeschiedenis onopgemerkt omdat **elke verificatie
+tot nu toe** `expo export --platform web` gebruikte (productie-bundel bouwen
++ los serveren) — dat pad genereert geen typed routes en start dus nooit de
+crashende code. Pas een live dev-server/preview (die wél `expo start`
+gebruikt) legt dit bloot — dat is wat er nu voor het eerst gebeurde.
+
+*Fix.* `expo-router` opgehoogd naar `^57.0.8` (nieuwste SDK57-uitgelijnde
+versie). Dat pakket vereist op zijn beurt `expo-constants@^57.0.7` (was
+`^18.0.13` — zelfde oude-versienummering-probleem) en een nieuwe directe
+dependency `expo-linking@^57.0.4` (voorheen alleen transitief aanwezig) —
+beide meegenomen. `npx expo install --fix` (Expo's eigen
+dependency-uitlijntool) was het voor de hand liggende gereedschap hiervoor,
+maar kon geen contact maken met Expo's eigen API vanuit deze sandbox
+(netwerkbeleid blokkeert dat host specifiek) — de juiste versies zijn in
+plaats daarvan handmatig bepaald via `expo-router`'s `peerDependencies` op
+het npm-registry (wel bereikbaar) en met de hand in `package.json` gezet,
+gevolgd door een schone `npm install`.
+
+Deze major-versiesprong bracht één type-incompatibiliteit aan het licht:
+React Navigation's `tabBarIcon`-prop geeft sinds deze versie `color` door als
+`ColorValue` (kan een opaak platform-kleurobject zijn via `PlatformColor()`)
+in plaats van gewoon `string`. Dit project geeft daar altijd een van de eigen
+theme-hexstrings aan door, dus in `app/(tabs)/_layout.tsx`'s `tabIcon`-helper
+is dat verantwoord teruggezet naar `string` via een expliciete cast, in
+plaats van het hele icoon-component-contract (`IconProps.color: string`) om
+te bouwen voor een geval dat zich in de praktijk nooit voordoet.
+
+*Afbakening.* Zuivere dependency-versie-fix + het ene type-gevolg daarvan —
+geen wijziging aan app-logica, routes, of databronnen.
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 251 tests slagen,
+`expo export --platform web --clear` en `expo export --platform android
+--clear` bouwen beide zonder fouten. Cruciaal: `npx expo start --web` start
+nu daadwerkelijk op (voorheen een directe crash) en een headless-browserrender
+van de resulterende dev-server toont het inlogscherm correct, zonder
+console-errors — hetzelfde witte-scherm-pad dat hierboven gemeld werd, nu
+bevestigd opgelost. Niet verder getest voorbij het inlogscherm (zelfde
+netwerkbeperking als bij de vorige sectie: deze sandbox kan geen directe
+HTTPS-verbinding naar het Supabase-project maken). Zijdelings: voor deze
+diagnose is tijdelijk het wachtwoord gereset van het losstaande
+QA-testaccount `gymwiki25@gmail.com` (eerder deze sessie aangemaakt voor
+flow-testing) om via een live dev-server te kunnen inloggen — het echte
+account van de gebruiker is niet aangeraakt.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen

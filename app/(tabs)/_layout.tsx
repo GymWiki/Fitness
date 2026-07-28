@@ -1,4 +1,5 @@
 import { Tabs } from 'expo-router';
+import type { ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CalendarIcon, HomeIcon, TrendingUpIcon, UserIcon, type IconProps } from '@/components/icons';
 import { colors } from '@/theme/colors';
@@ -11,8 +12,11 @@ import { colors } from '@/theme/colors';
 const BASE_TAB_BAR_HEIGHT = 58;
 const BASE_BOTTOM_PADDING = 10;
 
+// `tabBarIcon`'s `color` comes through as React Navigation's `ColorValue` (it can carry an
+// opaque platform color via `PlatformColor()`), but every value we ever pass through here is one
+// of our own theme's plain hex strings — safe to narrow back to the `string` our icon set expects.
 function tabIcon(Icon: (props: IconProps) => React.JSX.Element) {
-  return ({ color }: { color: string }) => <Icon color={color} size={22} />;
+  return ({ color }: { color: ColorValue }) => <Icon color={color as string} size={22} />;
 }
 
 export default function TabsLayout() {
