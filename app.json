@@ -9,9 +9,11 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.gymwiki.adaptivefitness"
     },
     "android": {
+      "package": "com.gymwiki.adaptivefitness",
       "adaptiveIcon": {
         "backgroundColor": "#0B0F14",
         "foregroundImage": "./assets/android-icon-foreground.png",
