@@ -2043,6 +2043,54 @@ beperking als eerder bij de kaartenrij zelf) — in plaats daarvan
 bevestigd via bron-onderzoek dat `ScheduleDayDetail` exact dezelfde
 databronnen en renderlogica gebruikt als de verwijderde modal.
 
+## Correctie: overgebleven volledige weeklijst verwijderd van Schema-pagina
+
+*Wat er mis was.* De vorige fix voegde de inline dag-info toe, maar liet
+de oude, losstaande bewerkbare lijst (`activeDays.map(DayCard)`, elke
+programmadag met eigen "Bewerken"/"Vervang"/reorder/verwijder) gewoon
+onder de kaartenrij + inline sectie staan — een tweede, volledige
+opsomming van alle dagen tegelijk, dubbelop met en in tegenspraak met
+"toon uitsluitend de geselecteerde dag".
+
+*Fix.* `DayCard`/`ExerciseRow`/`Stepper` (voorheen lokaal in
+`app/(tabs)/schema.tsx`) zijn verwijderd uit die pagina; de
+bewerkfunctionaliteit is verhuisd náár `ScheduleDayDetail.tsx` als
+`EditableExerciseRow`, en wordt alleen gerenderd voor de dag die
+`schema.tsx` als geselecteerd doorgeeft
+(`program.days.find((d) => d.id === selectedRow?.programDayId)`).
+Per regel worden nu twee databronnen samengevoegd die voorheen apart
+stonden: het bewerkbare `SchemaExercise` (uit `fetchSchemaProgram`, voor
+`updateExerciseSets`/`replaceExercise`/`swapExerciseOrder`) en de
+alleen-lezen advies-tekst (uit `fetchSchedulePreview`, voor het
+gewichtsadvies/cardio-uitleg) — gekoppeld op array-index, omdat beide
+queries dezelfde `day_exercises`-rij sorteren op `exercise_order` en dus
+altijd in dezelfde volgorde staan. Dag-verwijderen
+(`removeDay`/`confirmRemove`) zit nu naast de dagnaam in de inline
+sectie i.p.v. per kaart in de oude lijst.
+
+*Randgeval.* Een scheduled_sessions-rij kan in theorie naar een
+`program_day` wijzen dat niet meer bij het actieve programma hoort
+(bv. bij het terugkijken van een sessie van vóór een doelwissel) —
+`fetchSchedulePreview` vindt de oefeningen dan nog wel (leest direct via
+`programDayId`), maar `fetchSchemaProgram` (scoped op het huidige actieve
+programma) niet. Voor dat geval valt `ScheduleDayDetail` terug op een
+alleen-lezen weergave (`ReadOnlyExerciseRow`, geen bewerkknoppen) i.p.v.
+een crash of lege sectie.
+
+*Bewust behouden.* "Dag toevoegen" (`addDay`) is geen dag-specifieke
+actie en stond niet in de lijst van te verplaatsen bewerkcontrols — die
+knop staat nu direct onder de kaartenrij/dag-sectie, buiten een
+specifieke dagselectie om, functioneel ongewijzigd. Bekende beperking
+(al voor deze wijziging aanwezig, niet in scope): direct na "Dag
+toevoegen" verschijnt de nieuwe dag niet meteen in de kalenderweergave,
+omdat `ensureScheduledWindow` alleen het venster naar voren opvult en
+een al gegenereerde week niet herverdeelt.
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 243 tests slagen (geen
+test dekte de verwijderde `DayCard`/`ExerciseRow` rechtstreeks — puur
+presentationele component-herbedrading), `expo export --platform web`
+bouwt zonder fouten.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen
