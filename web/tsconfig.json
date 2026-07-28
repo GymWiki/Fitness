@@ -19,7 +19,10 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@fitness/progression-engine": ["./src/lib/engines/progression-engine/src/index.ts"],
+      "@fitness/adaptation-planner": ["./src/lib/engines/adaptation-planner/src/index.ts"],
+      "@fitness/program-generator": ["./src/lib/engines/program-generator/src/index.ts"]
     }
   },
   "include": [
