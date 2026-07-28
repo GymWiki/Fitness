@@ -37,7 +37,7 @@ function LoadingScreen() {
 }
 
 function RootNavigator() {
-  const { session, isLoading: isAuthLoading } = useAuth();
+  const { session, isLoading: isAuthLoading, isPasswordRecovery } = useAuth();
   const { profile, isLoading: isProfileLoading } = useProfile();
 
   if (isAuthLoading || (session && isProfileLoading)) {
@@ -46,13 +46,19 @@ function RootNavigator() {
 
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
-      <Stack.Protected guard={!session}>
+      {/* A password-recovery link's session is a real session, so this has to be checked ahead of
+          (and exclude) the normal `session`-based branches below — otherwise a recovery link would
+          route straight into onboarding/tabs instead of prompting for a new password first. */}
+      <Stack.Protected guard={isPasswordRecovery}>
+        <Stack.Screen name="reset-password" />
+      </Stack.Protected>
+      <Stack.Protected guard={!session && !isPasswordRecovery}>
         <Stack.Screen name="(auth)" />
       </Stack.Protected>
-      <Stack.Protected guard={!!session && !profile}>
+      <Stack.Protected guard={!!session && !profile && !isPasswordRecovery}>
         <Stack.Screen name="(onboarding)" />
       </Stack.Protected>
-      <Stack.Protected guard={!!session && !!profile}>
+      <Stack.Protected guard={!!session && !!profile && !isPasswordRecovery}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="workout/[dayId]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="history/[dayExerciseId]" options={{ presentation: 'modal' }} />

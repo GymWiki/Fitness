@@ -15,24 +15,35 @@ import { colors } from '@/theme/colors';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 6;
 
-type Mode = 'login' | 'signup';
+type Mode = 'login' | 'signup' | 'forgot';
 
 export default function LoginScreen() {
-  const { signInWithPassword, signUpWithPassword } = useAuth();
+  const { signInWithPassword, signUpWithPassword, requestPasswordReset } = useAuth();
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resetLinkSent, setResetLinkSent] = useState(false);
 
   const isValidEmail = EMAIL_PATTERN.test(email.trim());
   const isValidPassword = password.length >= MIN_PASSWORD_LENGTH;
-  const canSubmit = isValidEmail && isValidPassword && !isSubmitting;
+  const canSubmit = mode === 'forgot' ? isValidEmail && !isSubmitting : isValidEmail && isValidPassword && !isSubmitting;
 
   async function handleSubmit() {
     if (!canSubmit) return;
     setIsSubmitting(true);
     setError(null);
+    if (mode === 'forgot') {
+      const { error: submitError } = await requestPasswordReset(email.trim());
+      setIsSubmitting(false);
+      if (submitError) {
+        setError(submitError);
+      } else {
+        setResetLinkSent(true);
+      }
+      return;
+    }
     const submit = mode === 'login' ? signInWithPassword : signUpWithPassword;
     const { error: submitError } = await submit(email.trim(), password);
     setIsSubmitting(false);
@@ -43,9 +54,50 @@ export default function LoginScreen() {
     // picks up the new session and the root layout's Stack.Protected gate swaps screens.
   }
 
-  function toggleMode() {
-    setMode((current) => (current === 'login' ? 'signup' : 'login'));
+  function switchMode(nextMode: Mode) {
+    setMode(nextMode);
     setError(null);
+    setResetLinkSent(false);
+  }
+
+  if (mode === 'forgot') {
+    return (
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <Text style={styles.title}>Wachtwoord vergeten</Text>
+        <Text style={styles.body}>
+          {resetLinkSent
+            ? 'Check je e-mail voor een link om een nieuw wachtwoord in te stellen.'
+            : 'Vul je e-mailadres in, dan sturen we je een link om een nieuw wachtwoord in te stellen.'}
+        </Text>
+
+        {!resetLinkSent && (
+          <TextInput
+            style={styles.input}
+            placeholder="jij@voorbeeld.nl"
+            placeholderTextColor={colors.textSecondary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            textContentType="emailAddress"
+            value={email}
+            onChangeText={setEmail}
+            onSubmitEditing={handleSubmit}
+          />
+        )}
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        {!resetLinkSent && (
+          <Pressable style={[styles.primaryButton, !canSubmit && styles.primaryButtonDisabled]} disabled={!canSubmit} onPress={handleSubmit}>
+            {isSubmitting ? <ActivityIndicator color={colors.background} /> : <Text style={styles.primaryButtonText}>Verstuur reset-link</Text>}
+          </Pressable>
+        )}
+
+        <Pressable style={styles.secondaryButton} onPress={() => switchMode('login')}>
+          <Text style={styles.secondaryButtonText}>Terug naar inloggen</Text>
+        </Pressable>
+      </KeyboardAvoidingView>
+    );
   }
 
   return (
@@ -83,6 +135,12 @@ export default function LoginScreen() {
         <Text style={styles.hint}>Minimaal {MIN_PASSWORD_LENGTH} tekens.</Text>
       )}
 
+      {mode === 'login' && (
+        <Pressable onPress={() => switchMode('forgot')}>
+          <Text style={styles.linkText}>Wachtwoord vergeten?</Text>
+        </Pressable>
+      )}
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <Pressable style={[styles.primaryButton, !canSubmit && styles.primaryButtonDisabled]} disabled={!canSubmit} onPress={handleSubmit}>
@@ -93,7 +151,7 @@ export default function LoginScreen() {
         )}
       </Pressable>
 
-      <Pressable style={styles.secondaryButton} onPress={toggleMode}>
+      <Pressable style={styles.secondaryButton} onPress={() => switchMode(mode === 'login' ? 'signup' : 'login')}>
         <Text style={styles.secondaryButtonText}>
           {mode === 'login' ? 'Nog geen account? Registreren' : 'Al een account? Inloggen'}
         </Text>
@@ -133,6 +191,12 @@ const styles = StyleSheet.create({
   hint: {
     color: colors.textSecondary,
     fontSize: 13,
+    marginTop: -8,
+  },
+  linkText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: '600',
     marginTop: -8,
   },
   error: {

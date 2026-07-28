@@ -2455,6 +2455,76 @@ QA-testaccount `gymwiki25@gmail.com` (eerder deze sessie aangemaakt voor
 flow-testing) om via een live dev-server te kunnen inloggen — het echte
 account van de gebruiker is niet aangeraakt.
 
+## Feature: wachtwoord vergeten/wijzigen op de auth-pagina
+
+*Wat.* Het inlogscherm had geen manier om een wachtwoord te herstellen als je
+het vergeten was — alleen inloggen en registreren.
+
+*Fix.* Drie nieuwe stukken, samen de standaard Supabase-recovery-flow:
+- `src/lib/auth.tsx`: twee nieuwe methodes op `useAuth()` —
+  `requestPasswordReset(email)` (roept `supabase.auth.resetPasswordForEmail`
+  aan) en `updatePassword(newPassword)` (roept `supabase.auth.updateUser`
+  aan). Plus een nieuwe `isPasswordRecovery`-vlag, gezet zodra
+  `onAuthStateChange` het `PASSWORD_RECOVERY`-event meldt (dat gebeurt
+  automatisch zodra iemand de reset-link in de e-mail opent — Supabase zet
+  daarbij een geldige sessie op, geen aparte "recovery-token"-afhandeling
+  nodig). De vlag wordt weer gereset zodra `updatePassword` slaagt of bij
+  uitloggen.
+- `app/(auth)/index.tsx`: een derde `mode` naast login/registreren —
+  "Wachtwoord vergeten?" (alleen zichtbaar in de inlogstand) schakelt om naar
+  een simpel e-mailveld + "Verstuur reset-link"-knop, met een
+  bevestigingstekst na versturen ("Check je e-mail...") in plaats van
+  gewoon terug te vallen op het generieke foutveld.
+- `app/reset-password.tsx` (nieuw scherm) + `app/_layout.tsx`: omdat een
+  recovery-sessie een *geldige* sessie is, zou de bestaande
+  `session`-gebaseerde `Stack.Protected`-gate iemand die een reset-link
+  opent gewoon rechtstreeks het dashboard in sturen zonder ooit een nieuw
+  wachtwoord te vragen. De routing-guards in de root-layout zijn daarom
+  herordend tot vier elkaar uitsluitende takken in plaats van drie:
+  `isPasswordRecovery` wordt als eerste gecontroleerd (en expliciet
+  uitgesloten van de andere drie), en toont dan `reset-password` — een
+  eenvoudig nieuw-wachtwoord-formulier (met bevestigingsveld) dat
+  `updatePassword` aanroept. Na succes verdwijnt de vlag vanzelf en
+  navigeert de gate normaal door naar onboarding/tabs.
+
+*Redirect-URL.* Op web (`typeof window !== 'undefined'`) wordt
+`window.location.origin` als `redirectTo` meegegeven, zodat de link altijd
+teruggaat naar waar de app op dat moment draait (dev-server vandaag, een
+eventuele productie-host later) — geen hardcoded URL. Op native (geen
+`window`, en geen deep-link-handler voor de recovery-link opgezet — buiten
+scope, dit hele project is tot nu toe alleen op web geverifieerd) wordt
+`redirectTo` weggelaten; Supabase valt dan terug op de in het project
+geconfigureerde Site URL, wat gewoon dezelfde webapp in de systeembrowser
+opent — daar werkt de hierboven gebouwde flow ook zonder extra code.
+
+*Bijvangst.* De eerste versie importeerde `Platform` uit `react-native` in
+`auth.tsx` voor exact dezelfde web/native-check. Dat brak
+`switchGoal.test.ts`: die mockt alleen `./supabase`, niet `./profile` (dat
+`useAuth`/`auth.tsx` importeert), dus elke keer dat `auth.tsx` iets uit
+`react-native` importeert stroomt dat ongemockt door tot in Vitest, dat het
+écht bestand `node_modules/react-native/index.js` probeert te parsen —
+ongetranspileerde Flow-syntax, die Vitest/Rollup niet begrijpt
+("Expected 'from', got 'typeOf'"). Vervangen door een kale
+`typeof window !== 'undefined'`-check, die exact hetzelfde onderscheidt
+zonder de `react-native`-import.
+
+*Afbakening.* Alleen de wachtwoord-vergeten/-wijzigen-flow op de auth-pagina
+— geen wijziging aan inloggen/registreren zelf, geen apart
+"wachtwoord wijzigen"-scherm in Profiel voor al-ingelogde gebruikers (niet
+gevraagd; `updatePassword` staat er wel klaar voor als dat later gewenst is).
+
+*Verificatie.* `npx tsc --noEmit` clean, alle 251 tests slagen (inclusief de
+gefixte `switchGoal.test.ts`), `expo export --platform web --clear` bouwt
+zonder fouten (nog steeds met de losse `RecoveryCurveChart`-chunk). Een
+headless-browserrender van de geëxporteerde bundel bevestigt: "Wachtwoord
+vergeten?" op het inlogscherm schakelt om naar het reset-scherm, "Terug naar
+inloggen" schakelt weer terug, geen console-errors op geen van beide. Niet
+end-to-end getest (daadwerkelijk een reset-mail versturen/ontvangen/openen
+en het nieuwe-wachtwoord-scherm bereiken) — zelfde netwerkbeperking als de
+vorige twee secties: deze sandbox kan geen directe verbinding met het
+Supabase-project maken om in te loggen en de e-mail te laten versturen/
+bevestigen.
+
 ## Aannames die zijn gemaakt (graag bevestigen of bijsturen)
 
 De opdracht liet een aantal parameters open voor eigen interpretatie. Gekozen
