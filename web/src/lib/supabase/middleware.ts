@@ -2,13 +2,27 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabaseEnv } from './env';
 
-const PUBLIC_PATHS = ['/login', '/signup', '/reset-password', '/auth'];
-
+/**
+ * Refreshes the Supabase session cookie on every request so Server
+ * Components always see a non-expired user. Route protection (redirecting
+ * unauthenticated requests) is added in Fase 2 once there's a real login
+ * route to redirect to.
+ *
+ * Fails open — without env vars configured this is a no-op pass-through
+ * rather than a 500, so a misconfigured deploy doesn't take the whole site
+ * down.
+ */
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  const { url, anonKey } = getSupabaseEnv();
-  const supabase = createServerClient(url, anonKey, {
+  let env: { url: string; anonKey: string };
+  try {
+    env = getSupabaseEnv();
+  } catch {
+    return response;
+  }
+
+  const supabase = createServerClient(env.url, env.anonKey, {
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -21,19 +35,7 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // Revalidates the session on every request — required so Server
-  // Components always see a fresh (not expired) user.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const isPublicPath = PUBLIC_PATHS.some((path) => request.nextUrl.pathname.startsWith(path));
-
-  if (!user && !isPublicPath) {
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirectTo', request.nextUrl.pathname);
-    return NextResponse.redirect(loginUrl);
-  }
+  await supabase.auth.getUser();
 
   return response;
 }
